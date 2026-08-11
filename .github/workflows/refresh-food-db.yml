@@ -1,0 +1,76 @@
+name: Refresh hosted food database
+
+# Rebuilds the hosted snapshot from the Open Food Facts bulk export (and USDA,
+# when USDA_CSV_URL is set) and replaces the deploy workflow's cache, then
+# redeploys. Monthly is about right: Open Food Facts gains products
+# continuously, but the live API fallback in the app already covers anything
+# newer than the snapshot.
+on:
+  schedule:
+    - cron: '0 4 1 * *' # 04:00 UTC on the first of the month
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: food-db
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    # The Open Food Facts export is roughly a gigabyte compressed and parsing it
+    # is single-pass but not fast. Give it room rather than failing at minute 359.
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          df -h /
+
+      # One public download, no API key, feeding both datasets.
+      - name: Fetch the USDA export
+        run: node scripts/fetch-usda.mjs --out=data-build/usda
+
+      - name: Build core food dataset
+        run: node scripts/build-core-db.mjs --usda=data-build/usda
+
+      - name: Build hosted food database
+        run: |
+          ARGS="--usda=data-build/usda"
+          if [ -n "${{ vars.FOOD_DB_COUNTRIES }}" ]; then
+            ARGS="$ARGS --countries=${{ vars.FOOD_DB_COUNTRIES }}"
+          fi
+          node scripts/build-food-db.mjs $ARGS
+
+      - name: Summarise
+        run: |
+          echo "### Food data rebuilt" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          cat public/fooddb/manifest.json >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "Chunks: $(ls public/fooddb | grep -c 'sqlite3\.' || echo 0)" >> $GITHUB_STEP_SUMMARY
+          du -sh public/fooddb public/data/core-foods.json >> $GITHUB_STEP_SUMMARY
+
+      # A fresh key means the deploy workflow's `restore-keys` prefix match
+      # picks this up instead of last month's copy.
+      - name: Publish to the deploy cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            public/fooddb
+            public/data/core-foods.json
+          key: fooddb-${{ vars.FOOD_DB_VERSION || 'v1' }}-${{ github.run_id }}
+
+      - name: Trigger a redeploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --repo ${{ github.repository }}

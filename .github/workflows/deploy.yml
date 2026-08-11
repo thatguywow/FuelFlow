@@ -1,0 +1,112 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      rebuild_food_db:
+        description: 'Rebuild the hosted food database from scratch (slow)'
+        type: boolean
+        default: false
+
+# GitHub Pages is the whole backend. The app, the USDA core dataset and the
+# chunked branded database are all uploaded as one static artifact — nothing is
+# committed to the repository, so a multi-hundred-megabyte food database never
+# touches git history.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      # ---- Food data --------------------------------------------------------
+      # Rebuilding from the upstream exports takes tens of minutes, so both
+      # datasets are cached together and reused between deploys; the refresh
+      # workflow replaces the cache monthly.
+      - name: Restore food data
+        id: fooddb-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            public/fooddb
+            public/data/core-foods.json
+          key: fooddb-${{ vars.FOOD_DB_VERSION || 'v1' }}
+          restore-keys: fooddb-
+
+      - name: Free runner disk space
+        if: steps.fooddb-cache.outputs.cache-matched-key == '' || inputs.rebuild_food_db
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          df -h /
+
+      # One public download, no API key, feeding both the bundled core dataset
+      # and the hosted database.
+      - name: Fetch the USDA export
+        if: steps.fooddb-cache.outputs.cache-matched-key == '' || inputs.rebuild_food_db
+        run: node scripts/fetch-usda.mjs --out=data-build/usda
+
+      - name: Build core food dataset
+        if: steps.fooddb-cache.outputs.cache-matched-key == '' || inputs.rebuild_food_db
+        run: node scripts/build-core-db.mjs --usda=data-build/usda
+
+      - name: Build hosted food database
+        if: steps.fooddb-cache.outputs.cache-matched-key == '' || inputs.rebuild_food_db
+        run: |
+          # Global is the default and is almost always right: range requests mean
+          # a bigger database costs the user nothing at lookup time.
+          ARGS="--usda=data-build/usda"
+          if [ -n "${{ vars.FOOD_DB_COUNTRIES }}" ]; then
+            ARGS="$ARGS --countries=${{ vars.FOOD_DB_COUNTRIES }}"
+          fi
+          node scripts/build-food-db.mjs $ARGS
+
+      - name: Save food data
+        if: steps.fooddb-cache.outputs.cache-matched-key == '' || inputs.rebuild_food_db
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            public/fooddb
+            public/data/core-foods.json
+          key: fooddb-${{ vars.FOOD_DB_VERSION || 'v1' }}-${{ github.run_id }}
+
+      # ---- App -------------------------------------------------------------
+      - name: Build
+        env:
+          # Project sites are served from /<repo>/, so the base path has to
+          # match or every asset URL 404s.
+          VITE_BASE: /${{ github.event.repository.name }}/
+        run: npm run build
+
+      - name: Report artifact size
+        run: du -sh dist && du -sh dist/fooddb 2>/dev/null || true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

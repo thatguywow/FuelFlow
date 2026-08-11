@@ -1,0 +1,136 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import { VitePWA } from 'vite-plugin-pwa';
+
+// GitHub Pages project sites live under /<repo>/. Capacitor and user/org pages
+// live at the root. Set VITE_BASE at build time to switch.
+const base = process.env.VITE_BASE ?? '/';
+
+export default defineConfig({
+  base,
+  plugins: [
+    react(),
+    tailwindcss(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      // No `includeAssets` — `globPatterns` below already matches the icons and
+      // favicon, and listing them twice puts duplicate entries in the manifest.
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,json}'],
+        // Two heavyweight optional engines stay out of the precache so a first
+        // visit downloads the app rather than the app plus 1.7 MB of machinery
+        // most sessions never touch: the SQLite runtime (only the branded
+        // database tier needs it) and the ZXing barcode decoder (only browsers
+        // without a native `BarcodeDetector` need it). Both are runtime-cached
+        // the first time they are actually used, so offline works from then on.
+        // The core food dataset is ~2.5 MB (660 KB gzipped). Precaching it would
+        // put that download on the critical path of the very first visit, in
+        // competition with first paint. The app already fetches it on idle and
+        // seeds IndexedDB from it, so it is runtime-cached instead — same
+        // offline result, without delaying the first render.
+        globIgnores: [
+          '**/sql-wasm*.wasm',
+          '**/sqlite*.js',
+          '**/zxing-*.js',
+          '**/data/core-foods.json',
+        ],
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        runtimeCaching: [
+          {
+            urlPattern: /\/data\/core-foods\.json$/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'fuelflow-core-foods',
+              expiration: { maxEntries: 2, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            urlPattern: /\/assets\/(sql-wasm.*\.wasm|sqlite.*\.js|zxing-.*\.js)$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'fuelflow-engines',
+              expiration: { maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // Remote branded database chunks are immutable per build; cache hard.
+            urlPattern: /\/fooddb\/.*\.(sqlite3?|db|json)(\.\d+)?$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'fuelflow-branded-db',
+              expiration: { maxEntries: 512, maxAgeSeconds: 60 * 60 * 24 * 60 },
+              cacheableResponse: { statuses: [0, 200, 206] },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/(world|[a-z]{2})\.openfoodfacts\.org\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'fuelflow-off-api',
+              expiration: { maxEntries: 2000, maxAgeSeconds: 60 * 60 * 24 * 180 },
+            },
+          },
+        ],
+      },
+      manifest: {
+        name: 'FuelFlow — Calorie & Macro Tracker',
+        short_name: 'FuelFlow',
+        description:
+          'Local-first calorie, macro and micronutrient tracker with adaptive TDEE. Works offline. No account required.',
+        // Matches the panel colour inside the app mark, so the splash screen
+        // and status bar blend into the icon rather than framing it.
+        theme_color: '#0e1015',
+        background_color: '#0e1015',
+        display: 'standalone',
+        orientation: 'portrait',
+        start_url: base,
+        scope: base,
+        icons: [
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          {
+            src: 'icons/icon-512-maskable.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+      },
+    }),
+  ],
+  // The SQLite worker is built by a separate Rollup pass, so its chunks are
+  // named here rather than in `build.rollupOptions`. Everything it emits gets a
+  // `sqlite-` prefix purely so the service worker can exclude it from precache
+  // with one glob.
+  worker: {
+    format: 'es',
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/sqlite-worker-[hash].js',
+        chunkFileNames: 'assets/sqlite-chunk-[hash].js',
+      },
+    },
+  },
+  build: {
+    target: 'es2022',
+    rollupOptions: {
+      output: {
+        // Named rather than automatic so the service worker's precache can
+        // exclude the SQLite engine by filename. Without this it lands in an
+        // anonymous `index-<hash>.js` and every first visit downloads half a
+        // megabyte of database runtime it may never use.
+        manualChunks(id) {
+          if (id.includes('node_modules/sql.js-httpvfs')) return 'sqlite-engine';
+          if (id.includes('node_modules/@zxing')) return 'zxing';
+          if (/node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'react';
+          if (/node_modules[\\/]dexie/.test(id)) return 'db';
+          return undefined;
+        },
+      },
+    },
+  },
+  server: { port: 5173, host: true },
+});

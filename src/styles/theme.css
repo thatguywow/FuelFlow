@@ -1,0 +1,474 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   FuelFlow design system
+
+   Built around the app mark: a cyan → blue → indigo gradient flame on a
+   near-black panel. That gradient is the brand and it earns its keep — it runs
+   through the energy ring, the primary buttons, the active tab and the card
+   hairlines, so the whole app reads as one object rather than a stack of grey
+   boxes.
+
+   Two themes driven by `data-theme` on <html>. Every colour is declared once
+   per theme as a raw `--ff-*` custom property, then re-exported into Tailwind's
+   token namespace via `@theme inline`, so utilities resolve correctly in both
+   themes with no duplicated classes.
+--------------------------------------------------------------------------- */
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --ff-bg: #080a0f;
+  --ff-bg-elevated: #0e1015;
+  --ff-surface: #12151d;
+  --ff-surface-2: #191d27;
+  --ff-surface-3: #232834;
+  --ff-border: #1e2431;
+  --ff-border-strong: #2f3849;
+
+  --ff-text: #f2f5fa;
+  --ff-text-dim: #9ba6b8;
+  --ff-text-faint: #66718a;
+
+  /* The three stops of the mark's gradient. */
+  --ff-brand: #38bdf8;
+  --ff-brand-2: #3b82f6;
+  --ff-brand-3: #4f46e5;
+  --ff-brand-soft: rgb(56 189 248 / 0.14);
+  --ff-brand-contrast: #04121c;
+  --ff-brand-glow: rgb(56 189 248 / 0.35);
+
+  --ff-protein: #fb7185;
+  --ff-carbs: #fbbf24;
+  --ff-fat: #a78bfa;
+  --ff-alcohol: #f472b6;
+  --ff-fiber: #34d399;
+
+  --ff-danger: #f87171;
+  --ff-warn: #fbbf24;
+  --ff-ok: #34d399;
+  --ff-info: #60a5fa;
+
+  /* Layered rather than single shadows — one tight contact shadow plus one
+     wide ambient one is what separates "card" from "rectangle". */
+  --ff-shadow-1: 0 1px 2px rgb(0 0 0 / 0.5), 0 0 0 0.5px rgb(255 255 255 / 0.04);
+  --ff-shadow-2: 0 2px 4px rgb(0 0 0 / 0.4), 0 8px 24px -8px rgb(0 0 0 / 0.6);
+  --ff-shadow-3: 0 4px 8px rgb(0 0 0 / 0.5), 0 24px 64px -16px rgb(0 0 0 / 0.8);
+  --ff-scrim: rgb(3 5 9 / 0.72);
+
+  --ff-hairline: rgb(255 255 255 / 0.07);
+  --ff-wash-1: rgb(56 189 248 / 0.1);
+  --ff-wash-2: rgb(79 70 229 / 0.09);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --ff-bg: #f5f7fb;
+  --ff-bg-elevated: #ffffff;
+  --ff-surface: #ffffff;
+  --ff-surface-2: #f1f4f9;
+  --ff-surface-3: #e5eaf2;
+  --ff-border: #e3e8f0;
+  --ff-border-strong: #c8d2e0;
+
+  --ff-text: #0f172a;
+  --ff-text-dim: #4a5568;
+  --ff-text-faint: #7c8aa0;
+
+  --ff-brand: #0284c7;
+  --ff-brand-2: #2563eb;
+  --ff-brand-3: #4f46e5;
+  --ff-brand-soft: rgb(2 132 199 / 0.1);
+  --ff-brand-contrast: #ffffff;
+  --ff-brand-glow: rgb(37 99 235 / 0.25);
+
+  --ff-protein: #e11d48;
+  --ff-carbs: #d97706;
+  --ff-fat: #7c3aed;
+  --ff-alcohol: #be185d;
+  --ff-fiber: #059669;
+
+  --ff-danger: #dc2626;
+  --ff-warn: #d97706;
+  --ff-ok: #059669;
+  --ff-info: #2563eb;
+
+  --ff-shadow-1: 0 1px 2px rgb(15 23 42 / 0.06), 0 0 0 0.5px rgb(15 23 42 / 0.04);
+  --ff-shadow-2: 0 2px 4px rgb(15 23 42 / 0.05), 0 8px 24px -8px rgb(15 23 42 / 0.14);
+  --ff-shadow-3: 0 4px 8px rgb(15 23 42 / 0.06), 0 24px 64px -16px rgb(15 23 42 / 0.22);
+  --ff-scrim: rgb(15 23 42 / 0.4);
+
+  --ff-hairline: rgb(255 255 255 / 0.9);
+  --ff-wash-1: rgb(56 189 248 / 0.1);
+  --ff-wash-2: rgb(79 70 229 / 0.07);
+}
+
+@theme inline {
+  --color-bg: var(--ff-bg);
+  --color-bg-elevated: var(--ff-bg-elevated);
+  --color-surface: var(--ff-surface);
+  --color-surface-2: var(--ff-surface-2);
+  --color-surface-3: var(--ff-surface-3);
+  --color-border: var(--ff-border);
+  --color-border-strong: var(--ff-border-strong);
+
+  --color-text: var(--ff-text);
+  --color-dim: var(--ff-text-dim);
+  --color-faint: var(--ff-text-faint);
+
+  --color-brand: var(--ff-brand);
+  --color-brand-2: var(--ff-brand-2);
+  --color-brand-3: var(--ff-brand-3);
+  --color-brand-soft: var(--ff-brand-soft);
+  --color-brand-contrast: var(--ff-brand-contrast);
+
+  --color-protein: var(--ff-protein);
+  --color-carbs: var(--ff-carbs);
+  --color-fat: var(--ff-fat);
+  --color-alcohol: var(--ff-alcohol);
+  --color-fiber: var(--ff-fiber);
+
+  --color-danger: var(--ff-danger);
+  --color-warn: var(--ff-warn);
+  --color-ok: var(--ff-ok);
+  --color-info: var(--ff-info);
+
+  --font-sans:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', Menlo, monospace;
+
+  --radius-card: 1.25rem;
+  --radius-sheet: 1.75rem;
+  --radius-pill: 999px;
+
+  --shadow-e1: var(--ff-shadow-1);
+  --shadow-e2: var(--ff-shadow-2);
+  --shadow-e3: var(--ff-shadow-3);
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.42, 0.64, 1);
+}
+
+/* --------------------------------------------------------------------------
+   Base
+-------------------------------------------------------------------------- */
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    background: var(--color-bg);
+  }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+    margin: 0;
+    min-height: 100dvh;
+  }
+
+  /* A flat near-black page reads as cheap. Two very soft brand-coloured washes
+     bleeding in from the top corners give the background depth without ever
+     being consciously noticed. Fixed so it does not scroll away. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(70rem 40rem at 12% -8%, var(--ff-wash-1), transparent 60%),
+      radial-gradient(60rem 36rem at 92% -4%, var(--ff-wash-2), transparent 62%);
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Numbers are the entire point of this app: keep them from dancing. */
+  input[type='number'],
+  [data-numeric],
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  ::selection {
+    background: var(--color-brand-soft);
+    color: var(--color-text);
+  }
+
+  /* Range inputs are the one native control that always looks like 2009. */
+  input[type='range'] {
+    appearance: none;
+    height: 1.75rem;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type='range']::-webkit-slider-runnable-track {
+    height: 0.375rem;
+    border-radius: 999px;
+    background: var(--color-surface-3);
+  }
+  input[type='range']::-moz-range-track {
+    height: 0.375rem;
+    border-radius: 999px;
+    background: var(--color-surface-3);
+  }
+  input[type='range']::-webkit-slider-thumb {
+    appearance: none;
+    width: 1.375rem;
+    height: 1.375rem;
+    margin-top: -0.5rem;
+    border-radius: 999px;
+    background: linear-gradient(140deg, var(--ff-brand), var(--ff-brand-2));
+    border: 2px solid var(--color-bg-elevated);
+    box-shadow: 0 2px 8px var(--ff-brand-glow);
+    transition: transform 0.15s var(--ease-spring);
+  }
+  input[type='range']::-webkit-slider-thumb:active {
+    transform: scale(1.15);
+  }
+  input[type='range']::-moz-range-thumb {
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 999px;
+    background: var(--ff-brand);
+    border: 2px solid var(--color-bg-elevated);
+    box-shadow: 0 2px 8px var(--ff-brand-glow);
+  }
+
+  select {
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position:
+      calc(100% - 18px) calc(50% + 1px),
+      calc(100% - 13px) calc(50% + 1px);
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 2.25rem;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Utilities
+-------------------------------------------------------------------------- */
+
+@utility safe-t {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+@utility safe-b {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@utility safe-x {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Frosted bars — falls back to a solid tint where backdrop-filter is absent. */
+@utility glass {
+  background: color-mix(in oklab, var(--color-bg-elevated) 72%, transparent);
+  @supports (backdrop-filter: blur(1px)) {
+    backdrop-filter: saturate(180%) blur(24px);
+    -webkit-backdrop-filter: saturate(180%) blur(24px);
+  }
+}
+
+/**
+ * Card surface with a light-catching top edge.
+ *
+ * The 1px inset highlight along the top is the single cheapest trick for making
+ * a dark surface look like a physical panel rather than a filled rectangle — it
+ * reads as light falling from above.
+ */
+@utility panel {
+  position: relative;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-e1);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(180deg, var(--ff-hairline), transparent 42%);
+    mask: linear-gradient(180deg, #000 0 1.5px, transparent 1.5px);
+    -webkit-mask: linear-gradient(180deg, #000 0 1.5px, transparent 1.5px);
+  }
+}
+
+/** The brand gradient, for text or as a background. */
+@utility brand-gradient {
+  background-image: linear-gradient(
+    135deg,
+    var(--ff-brand) 0%,
+    var(--ff-brand-2) 52%,
+    var(--ff-brand-3) 100%
+  );
+}
+
+@utility brand-text {
+  background-image: linear-gradient(135deg, var(--ff-brand), var(--ff-brand-2) 70%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+/**
+ * Gradient hairline border, drawn by masking a gradient fill so only the
+ * 1px rim survives. Used on the hero card and the active tab pill.
+ */
+@utility gradient-ring {
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(140deg, var(--ff-brand), var(--ff-brand-3) 65%, transparent);
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    -webkit-mask-composite: xor;
+    pointer-events: none;
+  }
+}
+
+@utility glow-brand {
+  box-shadow:
+    0 2px 12px -2px var(--ff-brand-glow),
+    0 8px 32px -8px var(--ff-brand-glow);
+}
+
+@keyframes ff-sheet-in {
+  from {
+    transform: translateY(2.5%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes ff-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ff-pop-in {
+  from {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes ff-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes ff-pulse-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@utility animate-sheet-in {
+  animation: ff-sheet-in 0.34s var(--ease-out-quint) both;
+}
+@utility animate-fade-in {
+  animation: ff-fade-in 0.22s ease both;
+}
+@utility animate-pop-in {
+  animation: ff-pop-in 0.3s var(--ease-spring) both;
+}
+@utility animate-pulse-glow {
+  animation: ff-pulse-glow 2.4s ease-in-out infinite;
+}
+
+@utility skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 25%,
+    var(--color-surface-2) 37%,
+    var(--color-surface) 63%
+  );
+  background-size: 200% 100%;
+  animation: ff-shimmer 1.4s linear infinite;
+  border-radius: var(--radius-card);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
