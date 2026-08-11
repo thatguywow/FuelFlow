@@ -17,7 +17,7 @@
  *   node scripts/fetch-usda.mjs --url=https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_csv_2026-04-30.zip
  */
 
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, readdirSync } from 'node:fs';
 import { mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
@@ -107,25 +107,45 @@ async function download(url, target) {
   await pipeline(source, createWriteStream(target));
 }
 
+/** Without these three there is nothing to build; the rest only add detail. */
+const ESSENTIAL = ['food.csv', 'food_nutrient.csv', 'nutrient.csv'];
+
+function extractedFiles(dir) {
+  try {
+    return readdirSync(dir, { recursive: true }).map((f) => path.basename(String(f)));
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Node has no built-in zip reader, so this shells out. `unzip` is present on CI
- * runners and macOS; Windows 10+ ships bsdtar, which reads zip archives. One of
- * the two exists nearly everywhere.
+ * Node has no built-in zip reader, so this shells out. `unzip` exists on CI
+ * runners and macOS; Windows 10+ ships bsdtar, which reads zip archives.
+ *
+ * Success is judged by **which files landed on disk, not by the exit code**.
+ * `unzip` returns 11 ("no matching files") when any one of several patterns
+ * matches nothing, even though every other pattern extracted perfectly — so a
+ * non-zero status here routinely means "worked fine" and must not trigger the
+ * fallback.
  */
 function extract(zipPath, outDir) {
-  const unzip = spawnSync('unzip', ['-o', '-j', zipPath, ...WANTED.map((f) => `*${f}`), '-d', outDir], {
-    stdio: 'inherit',
-  });
-  if (unzip.status === 0) return;
+  const attempts = [
+    { cmd: 'unzip', args: ['-o', '-j', zipPath, ...WANTED.map((f) => `*${f}`), '-d', outDir] },
+    { cmd: 'tar', args: ['-xf', zipPath, '-C', outDir] },
+  ];
 
-  console.log('`unzip` unavailable — falling back to tar.');
-  const tar = spawnSync('tar', ['-xf', zipPath, '-C', outDir], { stdio: 'inherit' });
-  if (tar.status !== 0) {
-    throw new Error(
-      'Could not extract the archive. Install `unzip`, or unzip it by hand into ' +
-        `${outDir} and rerun the build scripts with --usda=${outDir}`,
-    );
+  for (const { cmd, args } of attempts) {
+    const result = spawnSync(cmd, args, { stdio: 'inherit' });
+    const present = extractedFiles(outDir);
+    if (ESSENTIAL.every((name) => present.includes(name))) return;
+    if (result.error) console.log(`\`${cmd}\` unavailable — trying the next method.`);
+    else console.log(`\`${cmd}\` did not produce the expected tables — trying the next method.`);
   }
+
+  throw new Error(
+    'Could not extract the archive. Install `unzip`, or unzip it by hand into ' +
+      `${outDir} and rerun the build scripts with --usda=${outDir}`,
+  );
 }
 
 async function main() {
