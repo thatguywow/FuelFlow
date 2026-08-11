@@ -278,30 +278,55 @@ async function* ingestOff() {
 // Source: USDA FoodData Central
 // ---------------------------------------------------------------------------
 
-/** USDA nutrient numbers → our columns, with the conversion to our units. */
+/** USDA nutrient numbers → our columns. */
 const USDA_NUTRIENTS = {
-  208: ['kcal', 1], 957: ['kcal', 1], 958: ['kcal', 1],
-  203: ['protein', 1],
-  205: ['carbs', 1],
-  204: ['fat', 1],
-  291: ['fiber', 1],
-  269: ['sugar', 1],
-  606: ['satfat', 1],
-  307: ['sodium', 1],
-  601: ['cholesterol', 1],
-  306: ['potassium', 1],
-  301: ['calcium', 1],
-  303: ['iron', 1],
+  203: 'protein',
+  205: 'carbs',
+  204: 'fat',
+  291: 'fiber',
+  269: 'sugar',
+  606: 'satfat',
+  307: 'sodium',
+  601: 'cholesterol',
+  306: 'potassium',
+  301: 'calcium',
+  303: 'iron',
 };
-/** Energy preference: 208 beats Atwater-specific beats Atwater-general. */
-const ENERGY_RANK = { 208: 0, 958: 1, 957: 2 };
+/** Energy, in order of preference: exact, then Atwater-specific, then general. */
+const ENERGY_NUMBERS = [208, 958, 957];
+const WANTED_NUMBERS = new Set([...ENERGY_NUMBERS, ...Object.keys(USDA_NUTRIENTS).map(Number)]);
 
-async function* ingestUsda(dir) {
+/**
+ * Ingest the USDA export **through SQLite rather than through JavaScript**.
+ *
+ * The obvious implementation — accumulate every food in a `Map`, attach its
+ * nutrients, then emit rows — dies on this dataset. Branded Foods alone is
+ * roughly two million products, and `food_nutrient.csv` has tens of millions of
+ * rows; holding that as JS objects exhausts the heap long before the build
+ * finishes (V8 gives up around 4 GB).
+ *
+ * So nothing is accumulated in memory at all. The three CSVs stream into
+ * temporary tables, a single pivoting `GROUP BY` turns the tall nutrient table
+ * into one row per food, and the result is joined straight into `products`.
+ * SQLite spills to disk as needed, so peak memory is flat no matter how large
+ * the export grows.
+ */
+async function ingestUsda(db, dir) {
   const input = path.resolve(dir);
   console.log(`\nUSDA: reading from ${input}`);
 
+  db.exec(`
+    CREATE TABLE tmp_food (fdc INTEGER PRIMARY KEY, name TEXT, generic INTEGER);
+    CREATE TABLE tmp_branded (
+      fdc INTEGER PRIMARY KEY, gtin INTEGER, brand TEXT, category TEXT,
+      serving_g REAL, package_g REAL
+    );
+    CREATE TABLE tmp_nutrient (fdc INTEGER, nbr INTEGER, amount REAL);
+  `);
+
   // food_nutrient.csv references nutrients by FDC's internal surrogate id
-  // (energy is 1008), not by the 208-style number this script speaks.
+  // (energy is 1008), not by the 208-style number this script speaks. This map
+  // is small — a few hundred rows — so it stays in memory.
   const numberByInternalId = new Map();
   for await (const row of readCsv(await findCsv(input, 'nutrient.csv'))) {
     const nbr = Number(row.nutrient_nbr);
@@ -313,88 +338,129 @@ async function* ingestUsda(dir) {
     (argv.usdatypes ?? 'branded_food,foundation_food,sr_legacy_food,survey_fndds_food').split(','),
   );
 
-  const foods = new Map();
+  db.exec('BEGIN');
+  const insertFood = db.prepare('INSERT OR IGNORE INTO tmp_food VALUES (?, ?, ?)');
+  let foodCount = 0;
   for await (const row of readCsv(await findCsv(input, 'food.csv'))) {
     if (!wantedTypes.has(row.data_type)) continue;
     const name = (row.description ?? '').trim();
     if (name.length < 2) continue;
-    foods.set(row.fdc_id, {
-      fdcId: Number(row.fdc_id),
-      name: name.slice(0, 150),
-      dataType: row.data_type,
-      nutrients: {},
-      ranks: {},
-    });
+    const fdc = Number(row.fdc_id);
+    if (!Number.isSafeInteger(fdc)) continue;
+    insertFood.run(fdc, name.slice(0, 150), row.data_type === 'branded_food' ? 0 : 1);
+    foodCount++;
   }
-  console.log(`  ${foods.size.toLocaleString()} foods selected`);
+  db.exec('COMMIT');
+  console.log(`  ${foodCount.toLocaleString()} foods selected`);
 
-  // Branded metadata: barcode, brand owner, serving size.
+  db.exec('BEGIN');
+  const insertBranded = db.prepare('INSERT OR IGNORE INTO tmp_branded VALUES (?, ?, ?, ?, ?, ?)');
   let brandedCount = 0;
   try {
     for await (const row of readCsv(await findCsv(input, 'branded_food.csv'))) {
-      const food = foods.get(row.fdc_id);
-      if (!food) continue;
+      const fdc = Number(row.fdc_id);
+      if (!Number.isSafeInteger(fdc)) continue;
+
       const digits = (row.gtin_upc ?? '').replace(/\D/g, '');
+      let gtin = null;
       if (digits.length >= 6 && digits.length <= 14) {
-        const id = Number(digits);
-        if (Number.isSafeInteger(id) && id > 0) { food.gtin = id; brandedCount++; }
+        const parsed = Number(digits);
+        if (Number.isSafeInteger(parsed) && parsed > 0) { gtin = parsed; brandedCount++; }
       }
-      food.brand = (row.brand_owner || row.brand_name || '').trim() || null;
-      food.category = (row.branded_food_category || '').trim() || null;
+
       const serving = number(row.serving_size);
       const unit = (row.serving_size_unit ?? '').toLowerCase();
-      if (serving && (unit === 'g' || unit === 'ml')) food.serving_g = serving;
-      const pkg = parseQuantity(row.package_weight);
-      if (pkg) food.package_g = pkg;
+      insertBranded.run(
+        fdc,
+        gtin,
+        (row.brand_owner || row.brand_name || '').trim() || null,
+        (row.branded_food_category || '').trim() || null,
+        serving && (unit === 'g' || unit === 'ml') ? serving : null,
+        parseQuantity(row.package_weight),
+      );
     }
     console.log(`  ${brandedCount.toLocaleString()} branded foods carry a barcode`);
   } catch {
     console.warn('  branded_food.csv missing — generic foods only.');
   }
+  db.exec('COMMIT');
 
   console.log('  Reading food_nutrient.csv (this is the big one)…');
+  db.exec('BEGIN');
+  const insertNutrient = db.prepare('INSERT INTO tmp_nutrient VALUES (?, ?, ?)');
   let rows = 0;
+  let kept = 0;
   for await (const row of readCsv(await findCsv(input, 'food_nutrient.csv'))) {
     if (++rows % 5_000_000 === 0) console.log(`    ${(rows / 1e6).toFixed(0)}M rows…`);
-    const food = foods.get(row.fdc_id);
-    if (!food) continue;
     const nbr = numberByInternalId.get(row.nutrient_id) ?? Number(row.nutrient_id);
-    const mapping = USDA_NUTRIENTS[nbr];
-    if (!mapping) continue;
+    if (!WANTED_NUMBERS.has(nbr)) continue;
+    const fdc = Number(row.fdc_id);
     const amount = Number(row.amount);
-    if (!Number.isFinite(amount)) continue;
-
-    const [key, scale] = mapping;
-    // Only energy has competing sources; everything else is first-write-wins.
-    const rank = ENERGY_RANK[nbr] ?? 0;
-    if (food.ranks[key] !== undefined && food.ranks[key] <= rank) continue;
-    food.nutrients[key] = amount * scale;
-    food.ranks[key] = rank;
+    if (!Number.isSafeInteger(fdc) || !Number.isFinite(amount)) continue;
+    insertNutrient.run(fdc, nbr, amount);
+    kept++;
   }
+  db.exec('COMMIT');
+  console.log(`    ${rows.toLocaleString()} rows read, ${kept.toLocaleString()} relevant`);
 
-  for (const food of foods.values()) {
-    const row = { ...food.nutrients, name: food.name };
-    for (const key of ['kcal', 'protein', 'carbs', 'fat', 'fiber', 'sugar', 'satfat', 'sodium', 'cholesterol', 'potassium', 'calcium', 'iron']) {
-      if (row[key] === undefined) row[key] = null;
-    }
-    if (!usable(row)) continue;
+  console.log('  Pivoting nutrients…');
+  db.exec('CREATE INDEX idx_tmp_nutrient ON tmp_nutrient(fdc)');
 
-    const branded = food.gtin !== undefined;
-    yield {
-      ...row,
-      // Barcoded rows key on the barcode; generic foods key on the negative of
-      // their FDC id, so one clustered table serves both with no extra index.
-      id: branded ? food.gtin : -food.fdcId,
-      brand: food.brand ?? null,
-      category: food.category ?? null,
-      serving_g: food.serving_g ?? null,
-      package_g: food.package_g ?? null,
-      src: branded ? SRC.USDA_BRANDED : SRC.USDA_GENERIC,
-      // USDA data is laboratory-measured, so it outranks crowd-sourced entries
-      // when the same barcode appears in both.
-      quality: food.dataType === 'branded_food' ? 0.8 : 0.98,
-    };
-  }
+  // One row per food. COALESCE over the three energy numbers reproduces the
+  // preference order without a second pass.
+  const pivot = `
+    SELECT fdc,
+      COALESCE(${ENERGY_NUMBERS.map((n) => `MAX(CASE WHEN nbr=${n} THEN amount END)`).join(', ')}) AS kcal,
+      ${Object.entries(USDA_NUTRIENTS)
+        .map(([nbr, col]) => `MAX(CASE WHEN nbr=${nbr} THEN amount END) AS ${col}`)
+        .join(',\n      ')}
+    FROM tmp_nutrient GROUP BY fdc
+  `;
+
+  // Barcoded rows key on the barcode; generic foods key on the negative of
+  // their FDC id, so one clustered table serves both with no extra index.
+  // A later source only replaces a row if it is genuinely better quality.
+  // The select is wrapped in a subquery so its WHERE cannot be confused with
+  // the upsert clause: SQLite's parser needs a `WHERE` immediately before
+  // `ON CONFLICT`, and `WHERE true` here is the documented disambiguator.
+  db.exec(`
+    INSERT INTO products
+      (id, name, brand, category, serving_g, package_g, kcal, protein, carbs, fat,
+       fiber, sugar, satfat, sodium, cholesterol, potassium, calcium, iron, quality, src)
+    SELECT * FROM (
+      SELECT
+        CASE WHEN b.gtin IS NOT NULL THEN b.gtin ELSE -f.fdc END AS id,
+        f.name, b.brand, b.category, b.serving_g, b.package_g,
+        n.kcal, n.protein, n.carbs, n.fat, n.fiber, n.sugar, n.satfat, n.sodium,
+        n.cholesterol, n.potassium, n.calcium, n.iron,
+        CASE WHEN f.generic = 1 THEN 0.98 ELSE 0.8 END AS quality,
+        CASE WHEN b.gtin IS NOT NULL THEN ${SRC.USDA_BRANDED} ELSE ${SRC.USDA_GENERIC} END AS src
+      FROM tmp_food f
+      LEFT JOIN tmp_branded b ON b.fdc = f.fdc
+      JOIN (${pivot}) n ON n.fdc = f.fdc
+      WHERE n.kcal IS NOT NULL
+        AND n.kcal BETWEEN 0 AND 900
+        AND ((n.protein IS NOT NULL) + (n.carbs IS NOT NULL) + (n.fat IS NOT NULL)) >= 2
+    )
+    WHERE true
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name, brand = excluded.brand, category = excluded.category,
+      serving_g = excluded.serving_g, package_g = excluded.package_g,
+      kcal = excluded.kcal, protein = excluded.protein, carbs = excluded.carbs,
+      fat = excluded.fat, fiber = excluded.fiber, sugar = excluded.sugar,
+      satfat = excluded.satfat, sodium = excluded.sodium,
+      cholesterol = excluded.cholesterol, potassium = excluded.potassium,
+      calcium = excluded.calcium, iron = excluded.iron,
+      quality = excluded.quality, src = excluded.src
+    WHERE excluded.quality > products.quality
+  `);
+
+  db.exec('DROP TABLE tmp_nutrient; DROP TABLE tmp_branded; DROP TABLE tmp_food');
+
+  const branded = db.prepare(`SELECT count(*) c FROM products WHERE src = ${SRC.USDA_BRANDED}`).get().c;
+  const generic = db.prepare(`SELECT count(*) c FROM products WHERE src = ${SRC.USDA_GENERIC}`).get().c;
+  console.log(`  USDA: ${branded.toLocaleString()} branded, ${generic.toLocaleString()} generic`);
+  return { usdaBranded: branded, usdaGeneric: generic };
 }
 
 // ---------------------------------------------------------------------------
@@ -474,23 +540,26 @@ async function build() {
     return true;
   };
 
-  db.exec('BEGIN');
-
   // USDA runs first so its laboratory-measured records are already in place;
-  // an Open Food Facts row for the same barcode then loses on quality.
+  // an Open Food Facts row for the same barcode then loses on quality. It
+  // ingests entirely inside SQLite rather than through JS, so it manages its
+  // own transactions.
   if (argv.usda && argv.usda !== 'true') {
-    for await (const row of ingestUsda(argv.usda)) if (!write(row)) break;
-    console.log(`  USDA: ${counts.usdaBranded.toLocaleString()} branded, ${counts.usdaGeneric.toLocaleString()} generic`);
+    const usda = await ingestUsda(db, argv.usda);
+    counts.usdaBranded = usda.usdaBranded;
+    counts.usdaGeneric = usda.usdaGeneric;
+    total = usda.usdaBranded + usda.usdaGeneric;
   }
 
   if (!argv['skip-off']) {
     console.log(`\nOpen Food Facts${countries ? ` (${[...countries].join(', ')})` : ' (global)'}`);
+    db.exec('BEGIN');
     for await (const row of ingestOff()) if (!write(row)) break;
+    db.exec('COMMIT');
     console.log(`  Open Food Facts: ${counts.off.toLocaleString()} products`);
   }
 
-  db.exec('COMMIT');
-
+  total = db.prepare('SELECT count(*) c FROM products').get().c;
   if (total === 0) throw new Error('No products survived filtering — refusing to publish an empty database.');
   console.log(`\n${total.toLocaleString()} products total (${counts.replaced.toLocaleString()} upgraded, ${counts.skipped.toLocaleString()} duplicates skipped)`);
 
