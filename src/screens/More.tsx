@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useUi } from '../state/ui';
+import { formatCount } from '../core/format';
 import { useTargets } from '../state/useTargets';
 import { saveProfile } from '../db/repo';
 import { coreDataStatus, ensureCoreData, type SeedProgress } from '../db/seed';
@@ -33,7 +34,7 @@ export default function More() {
         <Card padded={false} className="overflow-hidden">
           <Row
             title="Goal & macros"
-            detail={`${derived.targets.energyKcal.toLocaleString()} kcal · ${derived.targets.macros.protein}P / ${derived.targets.macros.carbs}C / ${derived.targets.macros.fat}F`}
+            detail={`${formatCount(derived.targets.energyKcal)} kcal · ${derived.targets.macros.protein}P / ${derived.targets.macros.carbs}C / ${derived.targets.macros.fat}F`}
             onClick={() => openSheet({ kind: 'goals' })}
           />
           <Divider className="ml-4" />
@@ -284,7 +285,7 @@ function DatabasePanel({ onClose }: { onClose: () => void }) {
             <IconBook size={17} className="text-brand" />
             <h3 className="flex-1 text-[15px] font-medium">Core foods (USDA)</h3>
             <span className="text-[12.5px] text-faint tnum">
-              {status?.installed ? `${status.count?.toLocaleString()} foods` : 'not installed'}
+              {status?.installed ? `${formatCount(status.count ?? 0)} foods` : 'not installed'}
             </span>
           </div>
           <p className="text-[12.5px] leading-relaxed text-faint">
@@ -306,7 +307,7 @@ function DatabasePanel({ onClose }: { onClose: () => void }) {
             size="sm"
             onClick={async () => {
               const written = await ensureCoreData(setProgress, { force: true });
-              if (written > 0) toast(`Installed ${written.toLocaleString()} foods`);
+              if (written > 0) toast(`Installed ${formatCount(written)} foods`);
             }}
           >
             {status?.installed ? 'Reinstall' : 'Install'}
@@ -337,7 +338,7 @@ function DatabasePanel({ onClose }: { onClose: () => void }) {
               ].map(([label, count]) => (
                 <div key={String(label)} className="rounded-xl bg-surface-2 py-2">
                   <div className="text-[15px] font-semibold tnum">
-                    {Number(count).toLocaleString()}
+                    {formatCount(Number(count))}
                   </div>
                   <div className="text-[10.5px] leading-tight text-faint">{label}</div>
                 </div>
@@ -347,7 +348,7 @@ function DatabasePanel({ onClose }: { onClose: () => void }) {
 
           {remote && (
             <p className="text-[11.5px] text-faint">
-              {remote.productCount.toLocaleString()} products · coverage: {remote.scope ?? 'global'}
+              {formatCount(remote.productCount)} products · coverage: {remote.scope ?? 'global'}
             </p>
           )}
         </Card>

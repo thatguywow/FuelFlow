@@ -29,3 +29,7 @@ data-build/
 *.njsproj
 *.sln
 *.sw?
+
+# Local screenshot harness (Playwright); not part of the build
+tools/
+shots/

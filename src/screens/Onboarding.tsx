@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { formatCount } from '../core/format';
 import { logWeight, saveProfile } from '../db/repo';
 import { toDayKey } from '../core/dates';
 import { fromKg, toKg, type MassUnit } from '../core/units';
@@ -211,7 +212,7 @@ export default function Onboarding() {
       <Card className="space-y-3">
         <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-faint">Your starting targets</p>
         <div className="flex items-baseline gap-2">
-          <span className="text-[32px] font-semibold tnum">{preview.energyKcal.toLocaleString()}</span>
+          <span className="text-[32px] font-semibold tnum">{formatCount(preview.energyKcal)}</span>
           <span className="text-[14px] text-faint">kcal/day</span>
         </div>
         <div className="grid grid-cols-3 gap-2 text-center">

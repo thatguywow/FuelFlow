@@ -1,3 +1,5 @@
+import { formatCount } from './format';
+
 /**
  * Unit conversion.
  *
@@ -108,7 +110,7 @@ export function formatMass(kg: number, unit: MassUnit, decimals = 1): string {
 
 export function formatEnergy(kcal: number, unit: EnergyUnit = 'kcal'): string {
   const value = unit === 'kcal' ? kcal : kcalToKj(kcal);
-  return `${Math.round(value).toLocaleString()} ${unit}`;
+  return `${formatCount(value)} ${unit}`;
 }
 
 /** Trim float noise from user-entered quantities (0.30000000000000004 → 0.3). */

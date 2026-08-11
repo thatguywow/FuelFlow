@@ -6,8 +6,12 @@ import { N, sumNutrients } from '../core/nutrients';
 import { describeConfidence } from '../core/adaptive';
 import { addWater, currentStreak, deleteEntry, restoreEntry, setDayComplete } from '../db/repo';
 import { getFood } from '../db/repo';
+import type { DiaryEntry } from '../db/schema';
+import type { DayKey } from '../core/dates';
 import { Button, Card, IconButton, SectionLabel, cx } from '../ui/primitives';
 import { EnergyRing, MacroBars } from '../ui/charts';
+import { useAnimatedNumber, useStagger } from '../ui/motion';
+import { formatCount } from '../core/format';
 import {
   IconBarcode,
   IconCheck,
@@ -69,7 +73,7 @@ export default function Today() {
       </header>
 
       {/* ---------- Hero ---------- */}
-      <Card glow className="flex flex-col items-center gap-6 overflow-hidden py-7">
+      <Card glow className="flex flex-col items-center gap-5 overflow-hidden py-6">
         <EnergyRing consumed={energy} target={targets.energyKcal + exerciseBonus} />
 
         <div className="grid w-full grid-cols-3 divide-x divide-border text-center">
@@ -166,7 +170,7 @@ export default function Today() {
               <SectionLabel
                 action={
                   <span className="text-[12px] font-medium text-faint tnum">
-                    {Math.round(mealKcal).toLocaleString()} kcal
+                    {formatCount(mealKcal)} kcal
                   </span>
                 }
               >
@@ -175,43 +179,13 @@ export default function Today() {
 
               <Card padded={false} className="overflow-hidden">
                 {entries.map((entry, index) => (
-                  <div key={entry.id}>
-                    {index > 0 && <div className="ml-4 h-px bg-border" />}
-                    <div className="group flex items-center gap-2 pr-2">
-                      <button
-                        onClick={async () => {
-                          const food = entry.foodId ? await getFood(entry.foodId) : undefined;
-                          if (food) openSheet({ kind: 'food-detail', food, mealId: meal.id, day, entryId: entry.id });
-                        }}
-                        className="min-w-0 flex-1 px-4 py-3 text-left transition-colors hover:bg-surface-2"
-                      >
-                        <div className="truncate text-[15px]">{entry.name}</div>
-                        <div className="mt-0.5 truncate text-[12.5px] text-faint">
-                          {entry.brand ? `${entry.brand} · ` : ''}
-                          {entry.quickAdd
-                            ? 'Quick add'
-                            : entry.portionLabel ?? `${Math.round(entry.grams)} g`}
-                        </div>
-                      </button>
-
-                      <span className="shrink-0 text-[14px] text-dim tnum">
-                        {Math.round(entry.nutrients[N.ENERGY] ?? 0)}
-                      </span>
-
-                      <IconButton
-                        label={`Remove ${entry.name}`}
-                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                        onClick={async () => {
-                          await deleteEntry(entry.id);
-                          toast(`Removed ${entry.name}`, {
-                            action: { label: 'Undo', run: () => void restoreEntry(entry.id) },
-                          });
-                        }}
-                      >
-                        <IconTrash size={16} />
-                      </IconButton>
-                    </div>
-                  </div>
+                  <EntryRow
+                    key={entry.id}
+                    entry={entry}
+                    index={index}
+                    mealId={meal.id}
+                    day={day}
+                  />
                 ))}
 
                 <div className={cx('flex items-center', entries.length > 0 && 'border-t border-border')}>
@@ -290,16 +264,80 @@ function Stat({
   accent?: boolean;
   onClick?: () => void;
 }) {
+  const shown = useAnimatedNumber(value, { duration: 650 });
   const Tag = onClick ? 'button' : 'div';
   return (
     <Tag onClick={onClick} className={cx('py-1', onClick && 'transition-opacity hover:opacity-70')}>
       <div className={cx('text-[20px] font-semibold tracking-[-0.02em] tnum', accent && 'brand-text')}>
-        {value.toLocaleString()}
+        {formatCount(shown)}
       </div>
       <div className="mt-1 text-[10.5px] font-medium uppercase tracking-[0.09em] text-faint">
         {label}
       </div>
     </Tag>
+  );
+}
+
+/**
+ * One diary row. Extracted so each can hold its own stagger state — the meal
+ * list cascades in rather than appearing as a single slab.
+ */
+function EntryRow({
+  entry,
+  index,
+  mealId,
+  day,
+}: {
+  entry: DiaryEntry;
+  index: number;
+  mealId: string;
+  day: DayKey;
+}) {
+  const openSheet = useUi((s) => s.openSheet);
+  const toast = useUi((s) => s.toast);
+  const shown = useStagger(index, 35);
+
+  return (
+    <div
+      className={cx(
+        'transition-[opacity,transform] duration-300 ease-[--ease-out-quint]',
+        shown ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0',
+      )}
+    >
+      {index > 0 && <div className="ml-4 h-px bg-border" />}
+      <div className="group flex items-center gap-2 pr-2">
+        <button
+          onClick={async () => {
+            const food = entry.foodId ? await getFood(entry.foodId) : undefined;
+            if (food) openSheet({ kind: 'food-detail', food, mealId, day, entryId: entry.id });
+          }}
+          className="min-w-0 flex-1 px-4 py-3 text-left transition-colors hover:bg-surface-2"
+        >
+          <div className="truncate text-[15px]">{entry.name}</div>
+          <div className="mt-0.5 truncate text-[12.5px] text-faint">
+            {entry.brand ? `${entry.brand} · ` : ''}
+            {entry.quickAdd ? 'Quick add' : entry.portionLabel ?? `${Math.round(entry.grams)} g`}
+          </div>
+        </button>
+
+        <span className="shrink-0 text-[14px] font-medium text-dim tnum">
+          {formatCount(entry.nutrients[N.ENERGY] ?? 0)}
+        </span>
+
+        <IconButton
+          label={`Remove ${entry.name}`}
+          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+          onClick={async () => {
+            await deleteEntry(entry.id);
+            toast(`Removed ${entry.name}`, {
+              action: { label: 'Undo', run: () => void restoreEntry(entry.id) },
+            });
+          }}
+        >
+          <IconTrash size={16} />
+        </IconButton>
+      </div>
+    </div>
   );
 }
 

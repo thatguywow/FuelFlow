@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useUi } from '../state/ui';
+import { formatCount } from '../core/format';
 import { useTargets } from '../state/useTargets';
 import { saveProfile } from '../db/repo';
 import { DIET_TEMPLATES, type AdaptSpeed, type DietTemplate, type GoalDirection, type MacroSplit } from '../core/profile';
@@ -156,13 +157,13 @@ function GoalsEditor({ derived }: { derived: NonNullable<ReturnType<typeof useTa
               </p>
               <div className="mt-1 flex items-baseline gap-2">
                 <span className="brand-text text-[36px] font-semibold leading-none tracking-[-0.03em] tnum">
-                  {preview.energyKcal.toLocaleString()}
+                  {formatCount(preview.energyKcal)}
                 </span>
                 <span className="text-[14px] text-faint">kcal</span>
               </div>
             </div>
             <div className="text-right text-[12px] text-faint">
-              <div className="tnum">{Math.round(expenditureKcal).toLocaleString()} burned</div>
+              <div className="tnum">{formatCount(expenditureKcal)} burned</div>
               <div className={cx('tnum', preview.energyDeltaKcal < 0 ? 'text-ok' : 'text-info')}>
                 {preview.energyDeltaKcal >= 0 ? '+' : ''}
                 {Math.round(preview.energyDeltaKcal)} / day

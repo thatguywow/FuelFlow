@@ -369,7 +369,15 @@
     inset: 0;
     border-radius: inherit;
     padding: 1px;
-    background: linear-gradient(140deg, var(--ff-brand), var(--ff-brand-3) 65%, transparent);
+    /* Deliberately faint and fading out by the halfway mark. At full strength a
+       brand-coloured outline reads as a focus ring or an error state rather
+       than as a lit edge — it should be felt, not seen. */
+    background: linear-gradient(
+      160deg,
+      color-mix(in oklab, var(--ff-brand) 55%, transparent),
+      color-mix(in oklab, var(--ff-brand-3) 30%, transparent) 45%,
+      transparent 70%
+    );
     mask:
       linear-gradient(#000 0 0) content-box,
       linear-gradient(#000 0 0);

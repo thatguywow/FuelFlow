@@ -1,5 +1,7 @@
-import { useId, useMemo } from 'react';
+import { useId, useMemo, useRef } from 'react';
 import { cx } from './primitives';
+import { useAnimatedNumber, useScrub } from './motion';
+import { formatCount } from '../core/format';
 
 /**
  * Charts.
@@ -14,11 +16,26 @@ import { cx } from './primitives';
 // Energy ring
 // ---------------------------------------------------------------------------
 
+/** Point on the ring at a given fraction of a full turn, starting at 12 o'clock. */
+function pointOnRing(cx: number, cy: number, r: number, turn: number) {
+  const angle = -Math.PI / 2 + turn * 2 * Math.PI;
+  return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+}
+
+function arcPath(cx: number, cy: number, r: number, turn: number): string {
+  // A full turn would draw an arc back to its own start point, which renders as
+  // nothing at all — hold just short of closing.
+  const t = Math.min(0.9999, Math.max(0, turn));
+  const start = pointOnRing(cx, cy, r, 0);
+  const end = pointOnRing(cx, cy, r, t);
+  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${t > 0.5 ? 1 : 0} 1 ${end.x} ${end.y}`;
+}
+
 export function EnergyRing({
   consumed,
   target,
-  size = 200,
-  stroke = 15,
+  size = 184,
+  stroke = 12,
   label,
   sublabel,
 }: {
@@ -32,91 +49,85 @@ export function EnergyRing({
   // Gradient and filter ids must be unique per instance or a second ring on the
   // page silently reuses the first one's definitions.
   const uid = useId().replace(/:/g, '');
+  const cx = size / 2;
+  const cy = size / 2;
   const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const ratio = target > 0 ? consumed / target : 0;
-  const clamped = Math.min(1, Math.max(0, ratio));
-  const over = ratio > 1;
-  const sweep = over ? Math.min(1, ratio - 1) : clamped;
 
-  const remaining = Math.round(target - consumed);
-  const primary = label ?? Math.abs(remaining).toLocaleString();
+  const ratio = target > 0 ? consumed / target : 0;
+  const over = ratio > 1;
+  const targetTurn = over ? Math.min(1, ratio - 1) : Math.min(1, Math.max(0, ratio));
+
+  // The arc travels to its new length rather than snapping, and the head dot
+  // rides along with it. This is the single most "alive" thing on the screen.
+  const turn = useAnimatedNumber(targetTurn, { duration: 900, epsilon: 0.0015 });
+  const remaining = target - consumed;
+  const shownRemaining = useAnimatedNumber(Math.abs(remaining), { duration: 700 });
+
+  const primary = label ?? formatCount(shownRemaining);
   const secondary = sublabel ?? (remaining >= 0 ? 'kcal left' : 'kcal over');
 
+  const head = pointOnRing(cx, cy, radius, turn);
   const arcColor = over ? 'var(--color-warn)' : `url(#ring-${uid})`;
 
   return (
     <div className="relative grid place-items-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90 overflow-visible" aria-hidden="true">
+      <svg width={size} height={size} className="overflow-visible" aria-hidden="true">
         <defs>
-          <linearGradient id={`ring-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
+          {/* Anchored to the ring's own box in user space and running top to
+              bottom, so the arc starts on cyan at 12 o'clock and deepens to
+              indigo as it sweeps — the same travel as the app mark. A gradient
+              defined in percentages sampled only its middle here, which is why
+              the whole arc came out one flat blue. */}
+          <linearGradient id={`ring-${uid}`} gradientUnits="userSpaceOnUse" x1={cx} y1={0} x2={cx} y2={size}>
             <stop offset="0%" stopColor="var(--ff-brand)" />
-            <stop offset="55%" stopColor="var(--ff-brand-2)" />
+            <stop offset="50%" stopColor="var(--ff-brand-2)" />
             <stop offset="100%" stopColor="var(--ff-brand-3)" />
           </linearGradient>
-          <filter id={`glow-${uid}`} x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation={stroke * 0.45} result="blur" />
-            <feComposite in="blur" operator="over" />
+          {/* A tight drop shadow reads as light coming off the arc. The previous
+              wide gaussian blur just produced a mushy halo. */}
+          <filter id={`glow-${uid}`} x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor="var(--ff-brand)" floodOpacity="0.5" />
           </filter>
         </defs>
 
+        {/* The track needs to be clearly present, not almost-invisible: without
+            it the arc has nothing to be measured against and the ring stops
+            reading as a proportion. */}
         <circle
-          cx={size / 2}
-          cy={size / 2}
+          cx={cx}
+          cy={cy}
           r={radius}
           fill="none"
-          stroke="var(--color-surface-2)"
+          stroke="var(--color-surface-3)"
           strokeWidth={stroke}
         />
 
-        {/* When intake exceeds the target, the full ring is drawn in the warning
-            colour and the overshoot rides on top, so the eye reads "past the
-            line" rather than "back near the start". */}
+        {/* Past the target the full ring turns amber and the overshoot rides on
+            top, so the eye reads "past the line" rather than "back near zero". */}
         {over && (
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke="var(--color-warn)"
-            strokeWidth={stroke}
-            opacity={0.3}
-          />
+          <circle cx={cx} cy={cy} r={radius} fill="none" stroke="var(--color-warn)" strokeWidth={stroke} opacity={0.28} />
         )}
 
-        {/* A blurred copy of the arc underneath is what makes the ring glow
-            rather than just being a coloured line. */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={arcColor}
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={circumference * (1 - sweep)}
-          filter={`url(#glow-${uid})`}
-          opacity={0.55}
-          style={{ transition: 'stroke-dashoffset 700ms var(--ease-out-quint)' }}
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={arcColor}
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={circumference * (1 - sweep)}
-          style={{ transition: 'stroke-dashoffset 700ms var(--ease-out-quint), stroke 240ms' }}
-        />
+        {turn > 0.002 && (
+          <>
+            <path
+              d={arcPath(cx, cy, radius, turn)}
+              fill="none"
+              stroke={arcColor}
+              strokeWidth={stroke}
+              strokeLinecap="round"
+              filter={`url(#glow-${uid})`}
+            />
+            {/* Head dot: marks the exact position and gives the arc a leading
+                edge instead of a blunt end. */}
+            <circle cx={head.x} cy={head.y} r={stroke / 2 - 3.5} fill="var(--color-bg-elevated)" opacity={0.9} />
+          </>
+        )}
       </svg>
 
       <div className="absolute inset-0 grid place-content-center text-center">
-        <div className="text-[44px] font-semibold leading-none tracking-[-0.035em] tnum">{primary}</div>
-        <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-faint">
+        <div className="text-[42px] font-semibold leading-none tracking-[-0.04em] tnum">{primary}</div>
+        <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">
           {secondary}
         </div>
       </div>
@@ -144,40 +155,53 @@ const MACRO_COLOR: Record<MacroBarDatum['key'], string> = {
 export function MacroBars({ data, compact }: { data: MacroBarDatum[]; compact?: boolean }) {
   return (
     <div className={cx('grid gap-3.5', compact ? 'grid-cols-3' : 'grid-cols-1')}>
-      {data.map((item) => {
-        const ratio = item.target > 0 ? item.consumed / item.target : 0;
-        const over = ratio > 1.02;
-        const color = over ? 'var(--color-warn)' : MACRO_COLOR[item.key];
-        return (
-          <div key={item.key} className={compact ? '' : 'flex items-center gap-3'}>
-            {!compact && <span className="w-16 shrink-0 text-[13px] text-dim">{item.label}</span>}
-            <div className={compact ? '' : 'flex-1'}>
-              {compact && (
-                <div className="mb-2 flex items-center gap-1.5">
-                  <span className="size-1.5 rounded-full" style={{ background: color }} />
-                  <span className="text-[11.5px] font-medium uppercase tracking-[0.06em] text-faint">
-                    {item.label}
-                  </span>
-                </div>
-              )}
-              <div className="h-[5px] overflow-hidden rounded-full bg-surface-2">
-                <div
-                  className="h-full rounded-full transition-[width] duration-700 ease-[--ease-out-quint]"
-                  style={{
-                    width: `${Math.min(100, ratio * 100)}%`,
-                    background: `linear-gradient(90deg, color-mix(in oklab, ${color} 65%, transparent), ${color})`,
-                    boxShadow: `0 0 10px -2px ${color}`,
-                  }}
-                />
-              </div>
-              <div className="mt-2 flex items-baseline gap-1 text-[12.5px] tnum">
-                <span className="font-semibold text-text">{Math.round(item.consumed)}</span>
-                <span className="text-faint">/ {Math.round(item.target)} g</span>
-              </div>
-            </div>
+      {data.map((item) => (
+        <MacroBar key={item.key} item={item} compact={compact} />
+      ))}
+    </div>
+  );
+}
+
+function MacroBar({ item, compact }: { item: MacroBarDatum; compact?: boolean }) {
+  const ratio = item.target > 0 ? item.consumed / item.target : 0;
+  const over = ratio > 1.02;
+  const color = over ? 'var(--color-warn)' : MACRO_COLOR[item.key];
+
+  const width = useAnimatedNumber(Math.min(100, ratio * 100), { duration: 800, epsilon: 0.2 });
+  const shown = useAnimatedNumber(item.consumed, { duration: 700 });
+
+  return (
+    <div className={compact ? '' : 'flex items-center gap-3'}>
+      {!compact && <span className="w-16 shrink-0 text-[13px] text-dim">{item.label}</span>}
+      <div className={compact ? '' : 'flex-1'}>
+        {compact && (
+          <div className="mb-2 flex items-center gap-1.5">
+            <span className="size-[7px] rounded-full" style={{ background: color, boxShadow: `0 0 8px -1px ${color}` }} />
+            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-faint">
+              {item.label}
+            </span>
           </div>
-        );
-      })}
+        )}
+        {/* An inset track rather than a flat fill: the shadow inside the groove
+            is what makes the bar look recessed instead of painted on. */}
+        <div
+          className="h-1.5 overflow-hidden rounded-full bg-surface-2"
+          style={{ boxShadow: 'inset 0 1px 2px rgb(0 0 0 / 0.25)' }}
+        >
+          <div
+            className="h-full rounded-full"
+            style={{
+              width: `${width}%`,
+              background: color,
+              boxShadow: `0 0 8px -1px ${color}`,
+            }}
+          />
+        </div>
+        <div className="mt-2 flex items-baseline gap-1 text-[12.5px] tnum">
+          <span className="font-semibold text-text">{formatCount(shown)}</span>
+          <span className="text-faint">/ {formatCount(item.target)} g</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -230,7 +254,7 @@ function formatCompact(value: number): string {
   if (value === 0) return '0';
   if (value < 1) return value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
   if (value < 10) return value.toFixed(1);
-  return Math.round(value).toLocaleString();
+  return formatCount(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -265,6 +289,8 @@ export function LineChart({
   formatY = (v: number) => String(Math.round(v)),
   xLabels,
   className,
+  scrubLabel,
+  unit,
 }: {
   series: LineSeries[];
   scatter?: { points: LinePoint[]; color: string };
@@ -273,8 +299,16 @@ export function LineChart({
   formatY?: (value: number) => string;
   xLabels?: { x: number; label: string }[];
   className?: string;
+  /** Caption for the scrub readout, e.g. a date for the hovered x. */
+  scrubLabel?: (x: number) => string;
+  unit?: string;
 }) {
   const uid = useId().replace(/:/g, '');
+  const svgRef = useRef<SVGSVGElement>(null);
+  // Drag anywhere on the chart to inspect a specific day. Charts you can
+  // interrogate feel like instruments; charts you can only look at feel like
+  // pictures.
+  const scrub = useScrub(svgRef);
   const width = 320;
   const padding = { top: 8, right: 8, bottom: 20, left: 38 };
 
@@ -316,10 +350,22 @@ export function LineChart({
 
   const ticks = Array.from({ length: yTicks + 1 }, (_, i) => bounds.minY + ((bounds.maxY - bounds.minY) * i) / yTicks);
 
+  // Snap the scrub position to the nearest real sample on the primary series,
+  // so the readout always names an actual day rather than a point between two.
+  const primary = series[0]?.points ?? [];
+  let hovered: LinePoint | null = null;
+  if (scrub !== null && primary.length > 0) {
+    const targetX = bounds.minX + scrub * (bounds.maxX - bounds.minX);
+    hovered = primary.reduce((best, p) =>
+      Math.abs(p.x - targetX) < Math.abs(best.x - targetX) ? p : best,
+    );
+  }
+
   return (
     <svg
+      ref={svgRef}
       viewBox={`0 0 ${width} ${height}`}
-      className={cx('w-full', className)}
+      className={cx('w-full touch-none select-none', className)}
       preserveAspectRatio="none"
       role="img"
     >
@@ -395,6 +441,37 @@ export function LineChart({
           {item.label}
         </text>
       ))}
+
+      {hovered && (
+        <g pointerEvents="none">
+          <line
+            x1={sx(hovered.x)}
+            x2={sx(hovered.x)}
+            y1={padding.top}
+            y2={height - padding.bottom}
+            stroke="var(--color-border-strong)"
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+          />
+          <circle cx={sx(hovered.x)} cy={sy(hovered.y)} r={4} fill={series[0]?.color ?? 'var(--color-brand)'} />
+          <circle cx={sx(hovered.x)} cy={sy(hovered.y)} r={7} fill={series[0]?.color ?? 'var(--color-brand)'} opacity={0.25} />
+
+          {/* Readout flips to the other side near the right edge so it never
+              runs off the chart. */}
+          <g transform={`translate(${sx(hovered.x) + (scrub! > 0.62 ? -84 : 6)}, ${padding.top + 2})`}>
+            <rect width={78} height={scrubLabel ? 32 : 19} rx={6} fill="var(--color-surface-3)" opacity={0.96} />
+            <text x={7} y={13} fontSize={11} fontWeight={600} fill="var(--color-text)">
+              {formatY(hovered.y)}
+              {unit ? ` ${unit}` : ''}
+            </text>
+            {scrubLabel && (
+              <text x={7} y={26} fontSize={9} fill="var(--color-faint)">
+                {scrubLabel(hovered.x)}
+              </text>
+            )}
+          </g>
+        </g>
+      )}
     </svg>
   );
 }
@@ -446,7 +523,7 @@ export function BarChart({
           style={{ bottom: `${(target / max) * 100}%` }}
         >
           <span className="absolute -top-4 right-0 text-[10px] text-faint tnum">
-            {Math.round(target).toLocaleString()}
+            {formatCount(target)}
           </span>
         </div>
       )}
@@ -464,7 +541,7 @@ export function BarChart({
                     : 'bg-brand/40',
             )}
             style={{ height: `${Math.max(bar.value === 0 ? 2 : 4, (bar.value / max) * 100)}%` }}
-            title={`${bar.label}: ${Math.round(bar.value).toLocaleString()}`}
+            title={`${bar.label}: ${formatCount(bar.value)}`}
           />
           <span className="truncate text-[9px] text-faint">{bar.label}</span>
         </div>
@@ -501,7 +578,16 @@ export function Sparkline({
     .join(' ');
 
   return (
-    <svg width={width} height={height} aria-hidden="true">
+    // Explicit flex sizing: inside a flex row the intrinsic width attribute is
+    // only a hint, and the sparkline stretches into whatever space is going.
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      className="shrink-0 opacity-70"
+      style={{ width, height }}
+      aria-hidden="true"
+    >
       <path d={path} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );

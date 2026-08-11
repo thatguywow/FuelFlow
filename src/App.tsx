@@ -38,12 +38,23 @@ export default function App() {
 
   return (
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-2xl flex-col">
-      <main className="flex-1 pb-[calc(5.25rem+env(safe-area-inset-bottom,0px))]">
+      <main className="flex-1 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))]">
         {tab === 'today' && <Today />}
         {tab === 'trends' && <Trends />}
         {tab === 'body' && <Body />}
         {tab === 'more' && <More />}
       </main>
+
+      {/* Content scrolling under a translucent bar stays legible through it and
+          reads as a rendering fault. This fades it out just above the nav so it
+          dissolves into the chrome instead of being sliced by it. */}
+      <div
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 mx-auto h-24 max-w-2xl"
+        style={{
+          background: 'linear-gradient(to top, var(--color-bg) 35%, transparent)',
+        }}
+        aria-hidden="true"
+      />
 
       <nav className="glass safe-b fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-2xl border-t border-border">
         {TABS.map(({ id, label, icon: Icon }) => {

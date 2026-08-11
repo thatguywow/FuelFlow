@@ -2,8 +2,9 @@ import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useTargets } from '../state/useTargets';
 import { useUi } from '../state/ui';
+import { formatCount } from '../core/format';
 import { dailySummaries } from '../db/repo';
-import { addDays, daysBetween, lastNDays, toDayKey } from '../core/dates';
+import { addDays, daysBetween, formatDayLabel, lastNDays, toDayKey } from '../core/dates';
 import { N } from '../core/nutrients';
 import { describeConfidence } from '../core/adaptive';
 import { fromKg } from '../core/units';
@@ -73,7 +74,7 @@ export default function Trends() {
         <Card className="space-y-3">
           <div className="flex items-baseline gap-2">
             <span className="text-[30px] font-semibold tnum">
-              {Math.round(adaptive?.expenditureKcal ?? formulaTdee).toLocaleString()}
+              {formatCount(adaptive?.expenditureKcal ?? formulaTdee)}
             </span>
             <span className="text-[14px] text-faint">kcal/day</span>
             {adaptive && (
@@ -109,7 +110,9 @@ export default function Trends() {
                   dashed: true,
                 },
               ]}
-              formatY={(v) => `${Math.round(v / 100) * 100}`}
+              formatY={(v) => formatCount(v)}
+              unit="kcal"
+              scrubLabel={(x) => formatDayLabel(addDays(days[0]!, Math.round(x)))}
             />
           ) : (
             <div className="grid h-32 place-items-center rounded-xl bg-surface-2 text-[13px] text-faint">
@@ -124,7 +127,7 @@ export default function Trends() {
               <p className="mt-0.5 text-faint">{confidence.detail}</p>
               <p className="mt-1.5 text-faint">
                 Dashed line is the textbook formula estimate
-                {' '}({Math.round(formulaTdee).toLocaleString()} kcal). The solid line is measured from your
+                {' '}({formatCount(formulaTdee)} kcal). The solid line is measured from your
                 own intake and weight.
               </p>
             </div>
@@ -168,10 +171,12 @@ export default function Trends() {
                   color: 'var(--color-dim)',
                 }}
                 formatY={(v) => v.toFixed(1)}
+                unit={unit}
+                scrubLabel={(x) => formatDayLabel(addDays(days[0]!, Math.round(x)))}
               />
               <p className="mt-2 text-[12px] leading-relaxed text-faint">
-                Dots are individual weigh-ins; the line is the trend. Judge progress by the line —
-                a single reading is mostly water.
+                Drag across either chart to read a specific day. Dots are individual weigh-ins; the
+                line is the trend — judge progress by the line, since a single reading is mostly water.
                 {rate && rate.rSquared < 0.25 && ' The trend is still noisy, so treat the rate as provisional.'}
               </p>
             </>
@@ -189,7 +194,7 @@ export default function Trends() {
         <SectionLabel
           action={
             <span className="text-[12px] text-faint tnum">
-              avg {Math.round(averageIntake).toLocaleString()} kcal
+              avg {formatCount(averageIntake)} kcal
             </span>
           }
         >
@@ -238,7 +243,7 @@ export default function Trends() {
       >
         <p className="text-[15px] font-medium">Adjust goal and targets</p>
         <p className="mt-0.5 text-[12.5px] text-faint">
-          Currently {goalSentence(profile.goal.rateKgPerWeek, unit)} · {targets.energyKcal.toLocaleString()} kcal/day
+          Currently {goalSentence(profile.goal.rateKgPerWeek, unit)} · {formatCount(targets.energyKcal)} kcal/day
         </p>
       </button>
     </div>
