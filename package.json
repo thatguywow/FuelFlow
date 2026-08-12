@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
+    "device": "node tools/device.mjs",
     "check:workflows": "node scripts/check-workflows.mjs",
     "data:usda": "node scripts/fetch-usda.mjs",
     "data:core": "node scripts/build-core-db.mjs --usda=data-build/usda",

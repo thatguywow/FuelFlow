@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["node_modules/vite/bin/vite.js", "--port", "5173", "--strictPort"],
       "port": 5173
+    },
+    {
+      "name": "device",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/device.mjs", "--port=4173"],
+      "port": 4173
     }
   ]
 }

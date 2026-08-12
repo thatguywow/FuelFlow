@@ -15,8 +15,12 @@ import { useSwipe } from '../ui/gestures';
 import { formatCount } from '../core/format';
 import { formatVolume } from '../core/units';
 import {
+  IconApple,
   IconBolt,
+  IconBowl,
   IconCheck,
+  IconCutlery,
+  IconSunrise,
   IconChevronLeft,
   IconChevronRight,
   IconDroplet,
@@ -210,9 +214,21 @@ export default function Today() {
               {/* Header doubles as the add control: the meal name, what it adds
                   up to, and a target big enough to hit without aiming. */}
               <div className="flex items-center gap-3 px-4 py-3">
-                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-[17px]">
-                  {MEAL_GLYPH[meal.id] ?? '🍽️'}
-                </span>
+                {(() => {
+                  const Glyph = MEAL_ICON[meal.id] ?? IconCutlery;
+                  const tint = MEAL_TINT[meal.id] ?? 'var(--color-brand)';
+                  return (
+                    <span
+                      className="grid size-9 shrink-0 place-items-center rounded-xl"
+                      style={{
+                        background: `color-mix(in oklab, ${tint} 14%, transparent)`,
+                        color: tint,
+                      }}
+                    >
+                      <Glyph size={18} />
+                    </span>
+                  );
+                })()}
                 <span className="min-w-0 flex-1">
                   <span className="block text-[15px] font-semibold">{meal.name}</span>
                   <span className="block text-[12px] text-faint tnum">
@@ -271,14 +287,24 @@ export default function Today() {
 }
 
 /**
- * A glyph per meal. Purely to give each row an anchor the eye can find while
- * scrolling — the text alone made four identical grey blocks.
+ * A glyph per meal, so each row has an anchor the eye can find while scrolling
+ * — the text alone made four identical grey blocks. Drawn icons rather than
+ * emoji: emoji render in the system font, so they bring their own colours and
+ * weight and look different on every device.
  */
-const MEAL_GLYPH: Record<string, string> = {
-  breakfast: '🍳',
-  lunch: '🥗',
-  dinner: '🍲',
-  snacks: '🍎',
+const MEAL_ICON: Record<string, (p: { size?: number }) => React.ReactElement> = {
+  breakfast: IconSunrise,
+  lunch: IconBowl,
+  dinner: IconCutlery,
+  snacks: IconApple,
+};
+
+/** Tint per meal, keeping the row anchors distinguishable at a glance. */
+const MEAL_TINT: Record<string, string> = {
+  breakfast: 'var(--color-carbs)',
+  lunch: 'var(--color-fiber)',
+  dinner: 'var(--color-fat)',
+  snacks: 'var(--color-protein)',
 };
 
 const TONE: Record<string, string> = {

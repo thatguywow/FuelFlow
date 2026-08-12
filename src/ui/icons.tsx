@@ -171,6 +171,41 @@ export const IconSettings = (p: IconProps) => (
   </Svg>
 );
 
+/**
+ * Meal glyphs, drawn on the same 24-unit grid and stroke weight as everything
+ * else. Emoji were standing in here and looked cheap next to a line-icon set —
+ * they render in the system emoji font, so they carry a different colour
+ * palette, a different weight, and a different look on every device.
+ */
+export const IconSunrise = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 4v3M5.6 9.6l2.1 2.1M2.5 16h3M18.4 9.6l-2.1 2.1M21.5 16h-3" />
+    <path d="M8 16a4 4 0 0 1 8 0" />
+    <path d="M3 20h18" />
+  </Svg>
+);
+
+export const IconBowl = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 11h18a9 9 0 0 1-18 0Z" />
+    <path d="M9.5 7.5c0-1.2 1-1.6 1-2.6 0-.7-.5-1.2-.5-1.2M14 7.5c0-1.2 1-1.6 1-2.6 0-.7-.5-1.2-.5-1.2" />
+  </Svg>
+);
+
+export const IconCutlery = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 3v7a2 2 0 0 0 4 0V3M8 12v9" />
+    <path d="M17.5 3c-1.4 1-2 2.6-2 4.5s.6 3 2 3.5V3Zm0 8v10" />
+  </Svg>
+);
+
+export const IconApple = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 8.2c-1-.9-2.2-1.2-3.4-1C6.6 7.5 5 9.4 5 12.2c0 3.6 2.6 8 4.7 8 .9 0 1.5-.5 2.3-.5s1.4.5 2.3.5c2.1 0 4.7-4.4 4.7-8 0-2.8-1.6-4.7-3.6-5-1.2-.2-2.4.1-3.4 1Z" />
+    <path d="M12 8.2V6a3 3 0 0 1 3-3" />
+  </Svg>
+);
+
 export const IconTarget = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="12" cy="12" r="8.5" />
