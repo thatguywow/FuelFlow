@@ -8,6 +8,7 @@ import { CreateFood, LogWeight, QuickAddSheet } from './Sheets';
 // Scanner pulls in camera and decoding code; quick log pulls in the parser.
 // Neither belongs in the initial download.
 const Scanner = lazy(() => import('./Scanner'));
+const LabelScanner = lazy(() => import('./LabelScanner'));
 const QuickLog = lazy(() => import('./QuickLog'));
 const Goals = lazy(() => import('./Goals'));
 
@@ -32,6 +33,7 @@ export default function SheetHost() {
       {sheet.kind === 'quick-log' && <QuickLog mealId={sheet.mealId} day={sheet.day} />}
       {sheet.kind === 'quick-add' && <QuickAddSheet mealId={sheet.mealId} day={sheet.day} />}
       {sheet.kind === 'scanner' && <Scanner mealId={sheet.mealId} day={sheet.day} />}
+      {sheet.kind === 'label-scanner' && <LabelScanner mealId={sheet.mealId} day={sheet.day} />}
       {sheet.kind === 'nutrient-detail' && <NutrientDetail day={sheet.day} />}
       {sheet.kind === 'log-weight' && <LogWeight />}
       {sheet.kind === 'create-food' && (

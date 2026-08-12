@@ -34,10 +34,11 @@ function arcPath(cx: number, cy: number, r: number, turn: number): string {
 export function EnergyRing({
   consumed,
   target,
-  size = 184,
-  stroke = 12,
+  size = 200,
+  stroke = 11,
   label,
   sublabel,
+  macros,
 }: {
   consumed: number;
   target: number;
@@ -45,6 +46,8 @@ export function EnergyRing({
   stroke?: number;
   label?: string;
   sublabel?: string;
+  /** Optional inner arcs, drawn concentrically inside the energy ring. */
+  macros?: MacroBarDatum[];
 }) {
   // Gradient and filter ids must be unique per instance or a second ring on the
   // page silently reuses the first one's definitions.
@@ -120,18 +123,67 @@ export function EnergyRing({
             />
             {/* Head dot: marks the exact position and gives the arc a leading
                 edge instead of a blunt end. */}
-            <circle cx={head.x} cy={head.y} r={stroke / 2 - 3.5} fill="var(--color-bg-elevated)" opacity={0.9} />
+            <circle cx={head.x} cy={head.y} r={stroke / 2 - 3} fill="var(--color-bg-elevated)" opacity={0.9} />
           </>
         )}
+
+        {/* Concentric macro arcs. The centre of a single ring is a lot of dead
+            space, and the three macros are the natural thing to put there —
+            same glanceable geometry, three times the information, and it lets
+            the card drop a separate row of bars entirely. */}
+        {macros?.map((macro, index) => (
+          <MacroArc
+            key={macro.key}
+            macro={macro}
+            cx={cx}
+            cy={cy}
+            radius={radius - stroke / 2 - 5 - index * 9 - 2.5}
+          />
+        ))}
       </svg>
 
       <div className="absolute inset-0 grid place-content-center text-center">
-        <div className="text-[42px] font-semibold leading-none tracking-[-0.04em] tnum">{primary}</div>
+        <div className="text-[38px] font-semibold leading-none tracking-[-0.04em] tnum">{primary}</div>
         <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">
           {secondary}
         </div>
       </div>
     </div>
+  );
+}
+
+/** One macro arc inside the energy ring, animated like the outer one. */
+function MacroArc({
+  macro,
+  cx: centerX,
+  cy: centerY,
+  radius,
+}: {
+  macro: MacroBarDatum;
+  cx: number;
+  cy: number;
+  radius: number;
+}) {
+  const ratio = macro.target > 0 ? macro.consumed / macro.target : 0;
+  const over = ratio > 1.02;
+  const turn = useAnimatedNumber(Math.min(1, Math.max(0, ratio)), { duration: 900, epsilon: 0.0015 });
+  const color = over ? 'var(--color-warn)' : MACRO_COLOR[macro.key];
+
+  return (
+    <>
+      {/* Fainter than the energy track: three more full-strength grooves in the
+          middle of the card turn the ring into a target rather than a reading. */}
+      <circle cx={centerX} cy={centerY} r={radius} fill="none" stroke="var(--color-surface-2)" strokeWidth={5} opacity={0.55} />
+      {turn > 0.004 && (
+        <path
+          d={arcPath(centerX, centerY, radius, turn)}
+          fill="none"
+          stroke={color}
+          strokeWidth={5}
+          strokeLinecap="round"
+        />
+      )}
+    </>
   );
 }
 

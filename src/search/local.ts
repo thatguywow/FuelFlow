@@ -82,17 +82,27 @@ export async function searchLocal(query: string, options: LocalSearchOptions = {
     }
   }
 
-  // The longest token is the most selective, so it drives the index scan.
-  const driver = [...tokens].sort((a, b) => b.length - a.length)[0]!;
-  const rest = tokens.filter((t) => t !== driver);
+  // Fetch the candidate keys for every token, then drive from the *rarest*.
+  //
+  // Driving from the longest token instead looks reasonable and is subtly
+  // broken: searching "white rice cooked" picked "cooked", which matches ~1800
+  // foods, so the candidate cap truncated the list before the right row was
+  // reached and the search returned nothing — while the half-typed "white rice
+  // cooke" happened to pick "white" (~240 matches) and worked. Longer does not
+  // mean rarer. The smallest key set is the selective one by definition, and
+  // it is the only one guaranteed not to have been truncated.
+  const cap = options.candidateCap ?? 4000;
+  const keySets = await Promise.all(
+    tokens.map((token) => db.foods.where('tokens').startsWith(token).limit(cap).primaryKeys()),
+  );
 
-  const keys = await db.foods
-    .where('tokens')
-    .startsWith(driver)
-    .limit(options.candidateCap ?? 1500)
-    .primaryKeys();
+  let driverIndex = 0;
+  for (let i = 1; i < keySets.length; i++) {
+    if (keySets[i]!.length < keySets[driverIndex]!.length) driverIndex = i;
+  }
 
-  const unique = [...new Set(keys as string[])];
+  const unique = [...new Set(keySets[driverIndex] as string[])];
+  const rest = tokens.filter((_, i) => i !== driverIndex);
   if (unique.length === 0) return [];
 
   const candidates = (await db.foods.bulkGet(unique)).filter(

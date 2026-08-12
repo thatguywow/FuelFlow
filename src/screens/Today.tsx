@@ -9,11 +9,11 @@ import { getFood } from '../db/repo';
 import type { DiaryEntry } from '../db/schema';
 import type { DayKey } from '../core/dates';
 import { Button, Card, IconButton, SectionLabel, cx } from '../ui/primitives';
-import { EnergyRing, MacroBars } from '../ui/charts';
-import { useAnimatedNumber, useStagger } from '../ui/motion';
+import { EnergyRing, type MacroBarDatum } from '../ui/charts';
+import { tapFeedback, useAnimatedNumber, useStagger } from '../ui/motion';
+import { useSwipe } from '../ui/gestures';
 import { formatCount } from '../core/format';
 import {
-  IconBarcode,
   IconCheck,
   IconChevronLeft,
   IconChevronRight,
@@ -35,6 +35,16 @@ export default function Today() {
   const dayData = useDay(day);
   const streak = useLiveQuery(() => currentStreak(), [], 0);
 
+  // Swiping is how people move through days on a phone; the chevrons stay for
+  // pointer users. Forward is blocked on today so you cannot swipe into
+  // tomorrow.
+  const swipeRef = useSwipe<HTMLDivElement>({
+    onSwipeLeft: () => {
+      if (!isToday(day)) stepDay(1);
+    },
+    onSwipeRight: () => stepDay(-1),
+  });
+
   if (!derived || !dayData) return <TodaySkeleton />;
 
   const { targets, profile, adaptive } = derived;
@@ -44,8 +54,21 @@ export default function Today() {
   const confidence = describeConfidence(adaptive);
   const showLearning = profile.useAdaptiveTdee && confidence.level !== 'good';
 
+  const macroData: MacroBarDatum[] = [
+    { key: 'protein', label: 'Protein', consumed: consumed[N.PROTEIN] ?? 0, target: targets.macros.protein },
+    {
+      key: 'carbs',
+      label: profile.display.netCarbs ? 'Net carbs' : 'Carbs',
+      consumed: profile.display.netCarbs
+        ? Math.max(0, (consumed[N.CARBS] ?? 0) - (consumed[N.FIBER] ?? 0))
+        : (consumed[N.CARBS] ?? 0),
+      target: targets.macros.carbs,
+    },
+    { key: 'fat', label: 'Fat', consumed: consumed[N.FAT] ?? 0, target: targets.macros.fat },
+  ];
+
   return (
-    <div className="safe-t px-4 pb-6">
+    <div ref={swipeRef} className="safe-t px-4 pb-6">
       {/* ---------- Day navigation ---------- */}
       <header className="flex items-center justify-between py-3">
         <IconButton label="Previous day" onClick={() => stepDay(-1)}>
@@ -74,9 +97,21 @@ export default function Today() {
 
       {/* ---------- Hero ---------- */}
       <Card glow className="flex flex-col items-center gap-5 overflow-hidden py-6">
-        <EnergyRing consumed={energy} target={targets.energyKcal + exerciseBonus} />
+        <EnergyRing
+          consumed={energy}
+          target={targets.energyKcal + exerciseBonus}
+          macros={macroData}
+        />
 
-        <div className="grid w-full grid-cols-3 divide-x divide-border text-center">
+        {/* Legend for the inner arcs. The arcs carry the proportions; these
+            carry the numbers. */}
+        <div className="grid w-full grid-cols-3 gap-2">
+          {macroData.map((macro) => (
+            <MacroLegend key={macro.key} macro={macro} />
+          ))}
+        </div>
+
+        <div className="grid w-full grid-cols-3 divide-x divide-border border-t border-border pt-4 text-center">
           <Stat label="Eaten" value={Math.round(energy)} />
           <Stat
             label="Target"
@@ -85,24 +120,6 @@ export default function Today() {
             onClick={() => openSheet({ kind: 'goals' })}
           />
           <Stat label={exerciseBonus > 0 ? 'Exercise' : 'Burned'} value={Math.round(dayData.exerciseKcal)} />
-        </div>
-
-        <div className="w-full border-t border-border pt-5">
-          <MacroBars
-            compact
-            data={[
-              { key: 'protein', label: 'Protein', consumed: consumed[N.PROTEIN] ?? 0, target: targets.macros.protein },
-              {
-                key: 'carbs',
-                label: profile.display.netCarbs ? 'Net carbs' : 'Carbs',
-                consumed: profile.display.netCarbs
-                  ? Math.max(0, (consumed[N.CARBS] ?? 0) - (consumed[N.FIBER] ?? 0))
-                  : (consumed[N.CARBS] ?? 0),
-                target: targets.macros.carbs,
-              },
-              { key: 'fat', label: 'Fat', consumed: consumed[N.FAT] ?? 0, target: targets.macros.fat },
-            ]}
-          />
         </div>
 
         <button
@@ -137,29 +154,16 @@ export default function Today() {
         </div>
       )}
 
-      {/* ---------- Quick actions ---------- */}
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <QuickAction
-          icon={<IconSparkle size={18} />}
-          label="Quick log"
-          onClick={() => openSheet({ kind: 'quick-log', mealId: defaultMeal(profile.meals), day })}
-        />
-        <QuickAction
-          icon={<IconBarcode size={18} />}
-          label="Scan"
-          onClick={() => openSheet({ kind: 'scanner', mealId: defaultMeal(profile.meals), day })}
-        />
-        <QuickAction
-          icon={<IconDroplet size={18} />}
-          label={`Water ${dayData.waterMl > 0 ? `· ${(dayData.waterMl / 1000).toFixed(1)} L` : ''}`}
-          onClick={async () => {
-            await addWater(day, 250);
-            toast('250 ml logged');
-          }}
-        />
-      </div>
+      <WaterStrip
+        day={day}
+        ml={dayData.waterMl}
+        targetMl={derived.nutrientTargets.get(N.WATER)?.target ?? 3000}
+      />
 
       {/* ---------- Meals ---------- */}
+      {/* Adding food now lives entirely behind the central button, so the diary
+          starts right below the summary instead of being pushed under a row of
+          tiles stranded mid-screen. */}
       <div className="mt-6 space-y-5">
         {profile.meals.map((meal) => {
           const entries = dayData.entries.filter((e) => e.mealId === meal.id);
@@ -239,18 +243,32 @@ export default function Today() {
   );
 }
 
-function defaultMeal(meals: { id: string; defaultTime: number }[]): string {
-  const minutes = new Date().getHours() * 60 + new Date().getMinutes();
-  let best = meals[0];
-  let bestDistance = Infinity;
-  for (const meal of meals) {
-    const distance = Math.abs(meal.defaultTime - minutes);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = meal;
-    }
-  }
-  return best?.id ?? 'snacks';
+const MACRO_LEGEND_COLOR: Record<MacroBarDatum['key'], string> = {
+  protein: 'var(--color-protein)',
+  carbs: 'var(--color-carbs)',
+  fat: 'var(--color-fat)',
+};
+
+function MacroLegend({ macro }: { macro: MacroBarDatum }) {
+  const shown = useAnimatedNumber(macro.consumed, { duration: 700 });
+  const color = MACRO_LEGEND_COLOR[macro.key];
+  return (
+    <div className="text-center">
+      <div className="flex items-center justify-center gap-1.5">
+        <span
+          className="size-[7px] rounded-full"
+          style={{ background: color, boxShadow: `0 0 8px -1px ${color}` }}
+        />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.07em] text-faint">
+          {macro.label}
+        </span>
+      </div>
+      <div className="mt-1 text-[13.5px] tnum">
+        <span className="font-semibold text-text">{formatCount(shown)}</span>
+        <span className="text-faint"> / {formatCount(macro.target)} g</span>
+      </div>
+    </div>
+  );
 }
 
 function Stat({
@@ -341,26 +359,44 @@ function EntryRow({
   );
 }
 
-function QuickAction({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
+/**
+ * Slim water strip. Logging water moved into the add menu, but the running
+ * total is still worth seeing at a glance, and a one-tap top-up next to it
+ * saves a trip through the menu for the most repeated action of the day.
+ */
+function WaterStrip({ day, ml, targetMl }: { day: DayKey; ml: number; targetMl: number }) {
+  const toast = useUi((s) => s.toast);
+  const shown = useAnimatedNumber(ml, { duration: 500 });
+  const ratio = targetMl > 0 ? Math.min(1, ml / targetMl) : 0;
+  const width = useAnimatedNumber(ratio * 100, { duration: 600, epsilon: 0.2 });
+
   return (
     <button
-      onClick={onClick}
-      className="panel flex flex-col items-center gap-2 py-3.5 text-[12px] font-medium text-dim transition-[transform,border-color] duration-150 hover:border-border-strong active:scale-[0.97]"
+      onClick={async () => {
+        await addWater(day, 250);
+        void tapFeedback();
+        toast('250 ml logged');
+      }}
+      className="panel mt-3 flex w-full items-center gap-3 px-4 py-3 text-left transition-[border-color,transform] duration-150 hover:border-border-strong active:scale-[0.99]"
     >
-      {/* Tinted glyph tile rather than a bare icon — gives the row weight and
-          picks the brand gradient up from the hero above it. */}
-      <span className="grid size-9 place-items-center rounded-xl bg-brand-soft text-brand">
-        {icon}
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand">
+        <IconDroplet size={16} />
       </span>
-      <span className="truncate px-1">{label}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-baseline justify-between">
+          <span className="text-[13.5px] font-medium">Water</span>
+          <span className="text-[12.5px] text-faint tnum">
+            {(shown / 1000).toFixed(1)} / {(targetMl / 1000).toFixed(1)} L
+          </span>
+        </span>
+        <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-surface-2">
+          <span
+            className="block h-full rounded-full"
+            style={{ width: `${width}%`, background: 'var(--color-brand)' }}
+          />
+        </span>
+      </span>
+      <IconPlus size={16} className="shrink-0 text-faint" />
     </button>
   );
 }

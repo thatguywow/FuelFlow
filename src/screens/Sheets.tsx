@@ -5,7 +5,8 @@ import { toDayKey, type DayKey } from '../core/dates';
 import { N } from '../core/nutrients';
 import { fromKg, toKg } from '../core/units';
 import { logWeight, quickAdd, upsertFood, logFood } from '../db/repo';
-import { Button, Card, Field, Input, Sheet } from '../ui/primitives';
+import { formatCount } from '../core/format';
+import { Button, Card, Field, Input, Sheet, cx } from '../ui/primitives';
 
 /** Weigh-in sheet. Defaults to today and to the user's own unit. */
 export function LogWeight() {
@@ -66,11 +67,52 @@ export function LogWeight() {
   );
 }
 
-/** Calories-and-macros-only entry, for meals you cannot be bothered to itemise. */
+/**
+ * Meal chooser, shared by the quick-entry sheets. Every one of them needs to
+ * ask the same question, and the answer should be visible before saving rather
+ * than assumed from the clock.
+ */
+export function MealPicker({
+  value,
+  onChange,
+  className,
+}: {
+  value: string;
+  onChange: (mealId: string) => void;
+  className?: string;
+}) {
+  const derived = useTargets();
+  if (!derived) return null;
+  return (
+    <div className={cx('flex flex-wrap gap-1.5', className)}>
+      {derived.profile.meals.map((meal) => (
+        <button
+          key={meal.id}
+          onClick={() => onChange(meal.id)}
+          className={cx(
+            'rounded-full px-3.5 py-1.5 text-[13px] transition-colors',
+            value === meal.id
+              ? 'brand-gradient font-medium text-brand-contrast'
+              : 'bg-surface-2 text-dim hover:bg-surface-3',
+          )}
+        >
+          {meal.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Quick calorie entry: a name if you want one, calories, and macros if you know
+ * them. For the restaurant meal you will never find in a database and do not
+ * want to spend three minutes approximating.
+ */
 export function QuickAddSheet({ mealId, day }: { mealId: string; day: DayKey }) {
   const closeSheet = useUi((s) => s.closeSheet);
   const toast = useUi((s) => s.toast);
 
+  const [meal, setMeal] = useState(mealId);
   const [name, setName] = useState('');
   const [kcal, setKcal] = useState('');
   const [protein, setProtein] = useState('');
@@ -92,7 +134,7 @@ export function QuickAddSheet({ mealId, day }: { mealId: string; day: DayKey }) 
       open
       onClose={closeSheet}
       size="auto"
-      title="Quick add"
+      title="Quick calories"
       footer={
         <Button
           variant="primary"
@@ -101,7 +143,7 @@ export function QuickAddSheet({ mealId, day }: { mealId: string; day: DayKey }) 
           onClick={async () => {
             await quickAdd(
               day,
-              mealId,
+              meal,
               {
                 [N.ENERGY]: energy,
                 ...(parsed.protein ? { [N.PROTEIN]: parsed.protein } : {}),
@@ -111,31 +153,48 @@ export function QuickAddSheet({ mealId, day }: { mealId: string; day: DayKey }) 
               name.trim() || 'Quick add',
             );
             closeSheet();
-            toast('Added');
+            toast(`${formatCount(energy)} kcal added`);
           }}
         >
-          Add {energy > 0 ? `${Math.round(energy)} kcal` : ''}
+          {energy > 0 ? `Add ${formatCount(energy)} kcal` : 'Enter calories or macros'}
         </Button>
       }
     >
-      <div className="space-y-3 p-4">
-        <Field label="Description (optional)">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Restaurant meal" autoFocus />
+      <div className="space-y-4 p-4">
+        <Field label="Calories">
+          <Input
+            type="number"
+            inputMode="numeric"
+            value={kcal}
+            onChange={(e) => setKcal(e.target.value)}
+            placeholder="0"
+            autoFocus
+            className="h-14 text-center text-[26px] font-semibold"
+          />
         </Field>
-        <Field label="Calories" hint={parsed.kcal === 0 && derivedKcal > 0 ? `Leaving this blank uses ${Math.round(derivedKcal)} kcal from the macros below.` : undefined}>
-          <Input type="number" inputMode="numeric" value={kcal} onChange={(e) => setKcal(e.target.value)} placeholder="0" />
+
+        <Field label="Meal">
+          <MealPicker value={meal} onChange={setMeal} />
         </Field>
-        <div className="grid grid-cols-3 gap-2">
-          <Field label="Protein (g)">
-            <Input type="number" inputMode="decimal" value={protein} onChange={(e) => setProtein(e.target.value)} placeholder="0" />
-          </Field>
-          <Field label="Carbs (g)">
-            <Input type="number" inputMode="decimal" value={carbs} onChange={(e) => setCarbs(e.target.value)} placeholder="0" />
-          </Field>
-          <Field label="Fat (g)">
-            <Input type="number" inputMode="decimal" value={fat} onChange={(e) => setFat(e.target.value)} placeholder="0" />
-          </Field>
-        </div>
+
+        <Field label="Name (optional)">
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Restaurant meal" />
+        </Field>
+
+        <Field
+          label="Macros (optional)"
+          hint={
+            parsed.kcal === 0 && derivedKcal > 0
+              ? `Calories left blank, so ${formatCount(derivedKcal)} kcal is used from these macros.`
+              : 'Leave blank if you only know the calorie figure.'
+          }
+        >
+          <div className="grid grid-cols-3 gap-2">
+            <Input type="number" inputMode="decimal" value={protein} onChange={(e) => setProtein(e.target.value)} placeholder="Protein" aria-label="Protein grams" />
+            <Input type="number" inputMode="decimal" value={carbs} onChange={(e) => setCarbs(e.target.value)} placeholder="Carbs" aria-label="Carbs grams" />
+            <Input type="number" inputMode="decimal" value={fat} onChange={(e) => setFat(e.target.value)} placeholder="Fat" aria-label="Fat grams" />
+          </div>
+        </Field>
       </div>
     </Sheet>
   );

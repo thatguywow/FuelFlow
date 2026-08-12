@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { Fragment, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useUi, type Tab } from './state/ui';
 import { useTargets } from './state/useTargets';
@@ -12,6 +12,7 @@ import Body from './screens/Body';
 import More from './screens/More';
 import Onboarding from './screens/Onboarding';
 import SheetHost from './screens/SheetHost';
+import AddMenu, { AddButton } from './screens/AddMenu';
 
 const TABS: { id: Tab; label: string; icon: (p: { size?: number }) => React.ReactElement }[] = [
   { id: 'today', label: 'Today', icon: IconFlame },
@@ -56,10 +57,17 @@ export default function App() {
         aria-hidden="true"
       />
 
-      <nav className="glass safe-b fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-2xl border-t border-border">
-        {TABS.map(({ id, label, icon: Icon }) => {
+      {/* Layering: fade 30, add-menu scrim 40, add-menu items 41, this bar 42,
+          sheets 50, toasts 60. The bar must sit above the scrim so the button
+          stays visible and can be tapped again to dismiss — a menu you cannot
+          see the way out of is worse than no menu — but below sheets, which
+          cover everything. */}
+      <nav className="glass safe-b fixed inset-x-0 bottom-0 z-[42] mx-auto flex max-w-2xl border-t border-border">
+        {TABS.map(({ id, label, icon: Icon }, index) => {
           const active = tab === id;
-          return (
+          // The add button occupies the middle slot, so the four tabs split
+          // two and two around it.
+          const button = (
             <button
               key={id}
               onClick={() => setTab(id)}
@@ -96,9 +104,20 @@ export default function App() {
               </span>
             </button>
           );
+
+          // Slot the add button between the second and third tabs.
+          return index === 2 ? (
+            <Fragment key={id}>
+              <AddButton />
+              {button}
+            </Fragment>
+          ) : (
+            button
+          );
         })}
       </nav>
 
+      <AddMenu />
       <SheetHost />
       <ToastHost />
     </div>
