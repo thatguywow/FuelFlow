@@ -1,0 +1,125 @@
+name: Build Android APK
+
+# Produces an installable debug APK for testing the real native app.
+#
+# This runs in CI rather than locally on purpose: GitHub's Ubuntu runners ship
+# the Android SDK and a modern JDK already, and they check out to a clean path.
+# Gradle refuses directory names containing "&", which rules out building from
+# the folder this project lives in on the author's machine.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/refresh-food-db.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      # Capacitor 8's Gradle plugin needs a current JDK; the runner default is
+      # older than that.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - run: npm ci
+
+      # The bundled core dataset. Reuses whatever the deploy workflow cached so
+      # this job does not download the USDA export a second time.
+      - name: Restore food data
+        id: fooddb-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            public/fooddb
+            public/data/core-foods.json
+          key: fooddb-${{ vars.FOOD_DB_VERSION || 'v1' }}
+          restore-keys: fooddb-
+
+      - name: Build core dataset if the cache was empty
+        if: steps.fooddb-cache.outputs.cache-matched-key == ''
+        run: |
+          node scripts/fetch-usda.mjs --out=data-build/usda
+          node scripts/build-core-db.mjs --usda=data-build/usda
+
+      # The hosted database is far too large to ship inside an APK, so the
+      # native app reads it from the Pages deployment over range requests —
+      # exactly as the web build does. Everything else works offline.
+      - name: Build web bundle
+        env:
+          VITE_FOOD_DB_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/fooddb/
+        run: |
+          # Deliberately no VITE_BASE: Capacitor serves from the root of a local
+          # origin, and the "/<repo>/" base used for Pages would break every
+          # asset path inside the shell.
+          rm -rf public/fooddb
+          npm run build
+
+      - name: Add the Android platform
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Assemble debug APK
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Name the artifact
+        id: name
+        run: |
+          APK=$(find android -name '*-debug.apk' | head -1)
+          echo "path=$APK" >> $GITHUB_OUTPUT
+          echo "size=$(du -h "$APK" | cut -f1)" >> $GITHUB_OUTPUT
+          cp "$APK" fuelflow-debug.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fuelflow-apk
+          path: fuelflow-debug.apk
+          retention-days: 30
+
+      # A release asset has a plain public URL, which is the only practical way
+      # to get an APK onto a phone — artifact downloads require a signed-in
+      # GitHub session and arrive as a zip.
+      - name: Publish to the rolling preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete preview --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create preview fuelflow-debug.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "FuelFlow preview build" \
+            --prerelease \
+            --notes "Debug APK built from \`${GITHUB_SHA::7}\` on $(date -u +%Y-%m-%d).
+
+**Install:** download on your phone, then allow installation from unknown sources when prompted.
+
+Debug-signed and unoptimised — for testing only, not for the Play Store. The app works offline apart from branded-product lookups, which stream from the hosted database over range requests."
+
+      - name: Summary
+        run: |
+          echo "### APK ready" >> $GITHUB_STEP_SUMMARY
+          echo "Size: ${{ steps.name.outputs.size }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "https://github.com/$GITHUB_REPOSITORY/releases/download/preview/fuelflow-debug.apk" >> $GITHUB_STEP_SUMMARY

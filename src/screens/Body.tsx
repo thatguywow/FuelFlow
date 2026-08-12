@@ -7,7 +7,7 @@ import { toDayKey, formatDuration, daysBetween } from '../core/dates';
 import { fromKg } from '../core/units';
 import { projectGoalDate } from '../core/trend';
 import type { BiometricType } from '../db/schema';
-import { Button, Card, EmptyState, Input, SectionLabel, Sheet, cx } from '../ui/primitives';
+import { Button, Card, EmptyState, Input, SectionLabel, Sheet, cx , ScreenHeader } from '../ui/primitives';
 import { LineChart, Sparkline } from '../ui/charts';
 import { IconClock, IconPlus, IconScale } from '../ui/icons';
 
@@ -43,8 +43,8 @@ export default function Body() {
   const projection = goal && rate ? projectGoalDate(currentWeightKg, goal, rate.kgPerWeek) : null;
 
   return (
-    <div className="safe-t space-y-5 px-4 pb-8 pt-4">
-      <h1 className="text-[22px] font-semibold tracking-[-0.01em]">Body</h1>
+    <div className="safe-t space-y-5 px-4 pb-8 pt-6">
+      <ScreenHeader title="Body" />
 
       {/* ---------- Weight ---------- */}
       <Card className="space-y-4">

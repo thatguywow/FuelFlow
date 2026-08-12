@@ -8,7 +8,7 @@ import { addDays, daysBetween, formatDayLabel, lastNDays, toDayKey } from '../co
 import { N } from '../core/nutrients';
 import { describeConfidence } from '../core/adaptive';
 import { fromKg } from '../core/units';
-import { Card, EmptyState, SectionLabel, Segmented, cx } from '../ui/primitives';
+import { Card, EmptyState, SectionLabel, Segmented, cx , ScreenHeader } from '../ui/primitives';
 import { BarChart, LineChart } from '../ui/charts';
 import { IconChart, IconInfo } from '../ui/icons';
 
@@ -53,9 +53,9 @@ export default function Trends() {
   );
 
   return (
-    <div className="safe-t space-y-5 px-4 pb-8 pt-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-semibold tracking-[-0.01em]">Trends</h1>
+    <div className="safe-t space-y-5 px-4 pb-8 pt-6">
+      <div className="flex items-start justify-between gap-3">
+        <ScreenHeader title="Trends" />
         <Segmented
           value={String(range) as '14' | '30' | '90'}
           onChange={(value) => setRange(Number(value) as Range)}

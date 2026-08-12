@@ -9,7 +9,7 @@ import { exportBackup, exportCsv, importBackup, saveBlob } from '../db/backup';
 import { remoteDbInfo } from '../search';
 import { db } from '../db/schema';
 import { toDayKey } from '../core/dates';
-import { Button, Card, Divider, Field, Input, Row, SectionLabel, Segmented, Sheet, Toggle, cx } from '../ui/primitives';
+import { Button, Card, Divider, Field, Input, Row, SectionLabel, Segmented, Sheet, Toggle, cx , ScreenHeader } from '../ui/primitives';
 import { IconBook, IconInfo, IconSettings } from '../ui/icons';
 
 /** Settings, data management and the honest "where does this come from" page. */
@@ -26,8 +26,8 @@ export default function More() {
     update({ display: { ...profile.display, ...patch } });
 
   return (
-    <div className="safe-t space-y-5 px-4 pb-8 pt-4">
-      <h1 className="text-[22px] font-semibold tracking-[-0.01em]">More</h1>
+    <div className="safe-t space-y-5 px-4 pb-8 pt-6">
+      <ScreenHeader title="More" />
 
       <section>
         <SectionLabel>Targets</SectionLabel>
@@ -79,20 +79,20 @@ export default function More() {
           </Field>
 
           <SettingToggle
-            title="Show net carbs"
-            detail="Subtracts fiber from the carbohydrate target. Useful on keto and low-carb."
+            title="Net carbs"
+            detail="Subtract fiber from the carb target."
             checked={profile.display.netCarbs}
             onChange={(netCarbs) => setDisplay({ netCarbs })}
           />
           <SettingToggle
             title="Hide streaks"
-            detail="Turns off streak counting if it makes logging feel like an obligation."
+            detail="If streak counting makes logging feel like an obligation."
             checked={profile.display.hideStreaks}
             onChange={(hideStreaks) => setDisplay({ hideStreaks })}
           />
           <SettingToggle
-            title="Add exercise calories to my target"
-            detail="Off by default. With adaptive expenditure on, your usual training is already inside the estimate, so eating workouts back a second time double-counts them."
+            title="Eat back exercise"
+            detail="Adaptive expenditure already includes your usual training, so this double-counts it."
             checked={profile.addExerciseCalories}
             onChange={(addExerciseCalories) => update({ addExerciseCalories })}
           />
@@ -133,8 +133,10 @@ function SettingToggle({
   return (
     <div className="flex items-start gap-3">
       <div className="min-w-0 flex-1">
-        <p className="text-[15px]">{title}</p>
-        <p className="mt-0.5 text-[12.5px] leading-relaxed text-faint">{detail}</p>
+        {/* Weight carries the hierarchy, not size: a medium title over a small
+            faint detail separates cleanly without either line shouting. */}
+        <p className="text-[14.5px] font-medium">{title}</p>
+        <p className="mt-0.5 text-[12px] leading-[1.45] text-faint">{detail}</p>
       </div>
       <Toggle checked={checked} onChange={onChange} label={title} />
     </div>

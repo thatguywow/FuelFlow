@@ -54,9 +54,11 @@
 
   /* Layered rather than single shadows — one tight contact shadow plus one
      wide ambient one is what separates "card" from "rectangle". */
-  --ff-shadow-1: 0 1px 2px rgb(0 0 0 / 0.5), 0 0 0 0.5px rgb(255 255 255 / 0.04);
-  --ff-shadow-2: 0 2px 4px rgb(0 0 0 / 0.4), 0 8px 24px -8px rgb(0 0 0 / 0.6);
-  --ff-shadow-3: 0 4px 8px rgb(0 0 0 / 0.5), 0 24px 64px -16px rgb(0 0 0 / 0.8);
+  /* Three genuinely distinct steps, not three variations of "faint". A card has
+     to look like it sits above the page, and a sheet above the card. */
+  --ff-shadow-1: 0 1px 2px rgb(0 0 0 / 0.55), 0 2px 8px -2px rgb(0 0 0 / 0.4);
+  --ff-shadow-2: 0 2px 4px rgb(0 0 0 / 0.45), 0 12px 32px -10px rgb(0 0 0 / 0.7);
+  --ff-shadow-3: 0 6px 12px rgb(0 0 0 / 0.5), 0 32px 72px -18px rgb(0 0 0 / 0.85);
   --ff-scrim: rgb(3 5 9 / 0.72);
 
   --ff-hairline: rgb(255 255 255 / 0.07);
@@ -142,8 +144,12 @@
     'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', Menlo, monospace;
 
-  --radius-card: 1.25rem;
-  --radius-sheet: 1.75rem;
+  /* Nothing in the app is a right angle. Larger, more consistent radii are most
+     of what separates "software" from "product" at a glance. */
+  --radius-card: 1.375rem;
+  --radius-row: 1rem;
+  --radius-input: 0.875rem;
+  --radius-sheet: 2rem;
   --radius-pill: 999px;
 
   --shadow-e1: var(--ff-shadow-1);

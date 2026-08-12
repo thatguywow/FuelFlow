@@ -29,9 +29,9 @@ const BUTTON_VARIANTS = {
 } as const;
 
 const BUTTON_SIZES = {
-  sm: 'h-9 px-3.5 text-[13px] rounded-xl',
-  md: 'h-11 px-4 text-[15px] rounded-2xl',
-  lg: 'h-[3.25rem] px-6 text-[16px] rounded-2xl',
+  sm: 'h-9 px-3.5 text-[13px] rounded-[0.75rem]',
+  md: 'h-11 px-4 text-[15px] rounded-[--radius-input]',
+  lg: 'h-[3.25rem] px-6 text-[16px] rounded-[1.125rem]',
 } as const;
 
 export function Button({ variant = 'secondary', size = 'md', full, className, ...rest }: ButtonProps) {
@@ -91,10 +91,44 @@ export function Card({
 
 export function SectionLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mb-2.5 flex items-baseline justify-between px-1">
-      <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-faint">{children}</h2>
+    <div className="mb-2.5 flex items-baseline justify-between px-1.5">
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.11em] text-faint">{children}</h2>
       {action}
     </div>
+  );
+}
+
+/**
+ * Screen title. The short brand-gradient rule above it costs nothing and gives
+ * each screen a deliberate top edge rather than text floating at the margin.
+ */
+export function ScreenHeader({ title, action }: { title: string; action?: ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3 pb-1">
+      <div>
+        <span className="brand-gradient mb-2.5 block h-[3px] w-7 rounded-full" aria-hidden="true" />
+        <h1 className="text-[24px] font-semibold tracking-[-0.02em]">{title}</h1>
+      </div>
+      {action && <div className="pt-4">{action}</div>}
+    </div>
+  );
+}
+
+/**
+ * Grouped list container. Rows inside get hairline separators and the group
+ * gets the card's rounding, so a long list reads as one object instead of a
+ * stack of full-bleed rectangles running off both edges of the screen.
+ */
+export function List({ className, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      {...rest}
+      className={cx(
+        'overflow-hidden rounded-[--radius-card] border border-border bg-surface',
+        '[&>*+*]:border-t [&>*+*]:border-border',
+        className,
+      )}
+    />
   );
 }
 
@@ -146,9 +180,9 @@ export function Field({
 }) {
   return (
     <label className={cx('block', className)}>
-      <span className="mb-1.5 block text-[13px] font-medium text-dim">{label}</span>
+      <span className="mb-1.5 block text-[12.5px] font-medium text-dim">{label}</span>
       {children}
-      {hint && <span className="mt-1.5 block text-[12px] leading-relaxed text-faint">{hint}</span>}
+      {hint && <span className="mt-1.5 block text-[11.5px] leading-[1.45] text-faint">{hint}</span>}
     </label>
   );
 }
@@ -160,9 +194,11 @@ export function Input({ className, ...rest }: React.ComponentPropsWithRef<'input
     <input
       {...rest}
       className={cx(
-        'h-11 w-full rounded-xl border border-border bg-surface-2 px-3.5 text-[15px] text-text',
+        'h-11 w-full rounded-[--radius-input] border border-border bg-surface-2 px-3.5 text-[15px] text-text',
         'transition-[border-color,box-shadow] duration-150 placeholder:text-faint',
-        'focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15',
+        // A softer focus treatment: the previous ring was bright enough to read
+        // as an error state on a dark surface.
+        'focus:border-brand/60 focus:outline-none focus:ring-[3px] focus:ring-brand/12',
         className,
       )}
     />
@@ -174,9 +210,9 @@ export function Select({ className, ...rest }: React.ComponentPropsWithRef<'sele
     <select
       {...rest}
       className={cx(
-        'h-11 w-full rounded-xl border border-border bg-surface-2 px-3.5 text-[15px] text-text',
+        'h-11 w-full rounded-[--radius-input] border border-border bg-surface-2 px-3.5 text-[15px] text-text',
         'transition-[border-color,box-shadow] duration-150',
-        'focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15',
+        'focus:border-brand/60 focus:outline-none focus:ring-[3px] focus:ring-brand/12',
         className,
       )}
     />
@@ -195,7 +231,10 @@ export function Segmented<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={cx('flex gap-1 rounded-2xl border border-border bg-surface-2 p-1', className)} role="tablist">
+    <div
+      className={cx('flex gap-1 rounded-[--radius-input] border border-border bg-surface-2 p-1', className)}
+      role="tablist"
+    >
       {options.map((option) => {
         const active = option.value === value;
         return (
@@ -205,11 +244,10 @@ export function Segmented<T extends string>({
             aria-selected={active}
             onClick={() => onChange(option.value)}
             className={cx(
-              'flex-1 rounded-xl px-3 py-2 text-[13px] font-medium',
-              'transition-[background-color,color,box-shadow] duration-200',
+              'flex-1 rounded-[0.625rem] px-3 py-[7px] text-[13px] transition-all duration-200',
               active
-                ? 'bg-surface text-text shadow-[--shadow-e1] ring-1 ring-border-strong'
-                : 'text-faint hover:text-dim',
+                ? 'bg-surface font-semibold text-text shadow-[--shadow-e1]'
+                : 'font-medium text-faint hover:text-dim',
             )}
           >
             {option.label}
@@ -277,8 +315,8 @@ export function Row({
       )}
     >
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[15px] text-text">{title}</div>
-        {detail && <div className="mt-0.5 truncate text-[13px] text-faint">{detail}</div>}
+        <div className="truncate text-[14.5px] font-medium text-text">{title}</div>
+        {detail && <div className="mt-0.5 truncate text-[12px] text-faint">{detail}</div>}
       </div>
       {right && <div className="shrink-0 text-[14px] text-dim tnum">{right}</div>}
     </Tag>

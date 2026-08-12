@@ -3,9 +3,18 @@ import { useUi } from '../state/ui';
 import { searchTiered, suggestionsForMeal, type SearchHit } from '../search';
 import type { DayKey } from '../core/dates';
 import { N } from '../core/nutrients';
-import { Button, EmptyState, Input, Segmented, Sheet, cx } from '../ui/primitives';
-import { IconBarcode, IconPlus, IconSearch, IconSparkle } from '../ui/icons';
+import { Button, EmptyState, Input, List, SectionLabel, Segmented, Sheet, cx } from '../ui/primitives';
+import { IconPlus, IconSearch } from '../ui/icons';
+import { formatCount } from '../core/format';
 import type { FoodSource } from '../db/schema';
+
+/** Provenance colours for the leading dot on each result. */
+const TIER_COLOR: Record<SearchHit['tier'], string> = {
+  personal: 'var(--color-brand)',
+  core: 'var(--color-fiber)',
+  remote: 'var(--color-fat)',
+  online: 'var(--color-faint)',
+};
 
 type Filter = 'all' | 'mine' | 'recipes';
 
@@ -100,27 +109,17 @@ export default function AddFood({ mealId, day }: { mealId: string; day: DayKey }
         </div>
       }
       footer={
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            className="flex-1"
-            onClick={() => openSheet({ kind: 'quick-log', mealId, day })}
-          >
-            <IconSparkle size={17} />
-            Quick log
-          </Button>
-          <Button
-            variant="secondary"
-            className="flex-1"
-            onClick={() => openSheet({ kind: 'scanner', mealId, day })}
-          >
-            <IconBarcode size={17} />
-            Scan
-          </Button>
-          <Button variant="secondary" onClick={() => openSheet({ kind: 'create-food', mealId, day })}>
-            <IconPlus size={17} />
-          </Button>
-        </div>
+        // Scanning and describing a meal now live in the central add menu, so
+        // repeating them here was just noise. What is genuinely missing at this
+        // point is the food you searched for and could not find.
+        <Button
+          variant="secondary"
+          full
+          onClick={() => openSheet({ kind: 'create-food', mealId, day })}
+        >
+          <IconPlus size={17} />
+          Create a custom food
+        </Button>
       }
     >
       <div className="sticky top-0 z-10 bg-bg-elevated px-4 py-2.5">
@@ -154,37 +153,47 @@ export default function AddFood({ mealId, day }: { mealId: string; day: DayKey }
         />
       )}
 
-      <div className="pb-4">
+      <div className="space-y-4 px-4 pb-4">
         {grouped.map((group) => (
-          <div key={group.tier}>
-            <div className="px-4 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.09em] text-faint">
-              {group.label}
-            </div>
-            {group.items.map((hit) => (
-              <button
-                key={hit.food.id}
-                onClick={() => openSheet({ kind: 'food-detail', food: hit.food, mealId, day })}
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface-2 active:bg-surface-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[15px]">{hit.food.name}</div>
-                  <div className="mt-0.5 truncate text-[12.5px] text-faint">
-                    {[hit.food.brand, hit.suggestedGrams ? `${Math.round(hit.suggestedGrams)} g` : null]
-                      .filter(Boolean)
-                      .join(' · ')}
+          <section key={group.tier}>
+            <SectionLabel>{group.label}</SectionLabel>
+            <List>
+              {group.items.map((hit) => (
+                <button
+                  key={hit.food.id}
+                  onClick={() => openSheet({ kind: 'food-detail', food: hit.food, mealId, day })}
+                  className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-surface-2 active:bg-surface-3"
+                >
+                  {/* Provenance dot. Tells you at a glance whether a result is
+                      something you have eaten, curated reference data, or a
+                      stranger's crowd-sourced entry. */}
+                  <span
+                    className="size-1.5 shrink-0 rounded-full"
+                    style={{ background: TIER_COLOR[hit.tier] }}
+                    title={group.label}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[14.5px]">{hit.food.name}</div>
+                    <div className="mt-0.5 truncate text-[12px] text-faint">
+                      {[hit.food.brand, hit.suggestedGrams ? `${Math.round(hit.suggestedGrams)} g` : null]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </div>
                   </div>
-                </div>
-                <div className="shrink-0 text-right">
-                  <div className="text-[14px] text-dim tnum">
-                    {Math.round(
-                      ((hit.food.per100g[N.ENERGY] ?? 0) * (hit.suggestedGrams ?? 100)) / 100,
-                    )}
+                  <div className="shrink-0 text-right">
+                    <div className="text-[14.5px] font-semibold tnum">
+                      {formatCount(
+                        ((hit.food.per100g[N.ENERGY] ?? 0) * (hit.suggestedGrams ?? 100)) / 100,
+                      )}
+                    </div>
+                    <div className="text-[9.5px] font-medium uppercase tracking-[0.08em] text-faint">
+                      kcal
+                    </div>
                   </div>
-                  <div className="text-[10px] uppercase tracking-wide text-faint">kcal</div>
-                </div>
-              </button>
-            ))}
-          </div>
+                </button>
+              ))}
+            </List>
+          </section>
         ))}
 
         {pending && (
