@@ -9,19 +9,21 @@ import { getFood } from '../db/repo';
 import type { DiaryEntry } from '../db/schema';
 import type { DayKey } from '../core/dates';
 import { Button, Card, IconButton, SectionLabel, cx } from '../ui/primitives';
-import { EnergyRing, type MacroBarDatum } from '../ui/charts';
+import { EnergyRing, MacroRow, type MacroBarDatum } from '../ui/charts';
 import { tapFeedback, useAnimatedNumber, useStagger } from '../ui/motion';
 import { useSwipe } from '../ui/gestures';
 import { formatCount } from '../core/format';
 import { formatVolume } from '../core/units';
 import {
+  IconBolt,
   IconCheck,
   IconChevronLeft,
   IconChevronRight,
-  IconCopy,
   IconDroplet,
+  IconFlame,
   IconPlus,
   IconSparkle,
+  IconTarget,
   IconTrash,
 } from '../ui/icons';
 
@@ -69,7 +71,9 @@ export default function Today() {
   ];
 
   return (
-    <div ref={swipeRef} className="safe-t px-4 pb-6">
+    // Sections are spaced by the container rather than by margins on each
+    // block, so a label can never end up sitting against the card above it.
+    <div ref={swipeRef} className="safe-t space-y-5 px-4 pb-6">
       {/* ---------- Day navigation ---------- */}
       <header className="flex items-center justify-between py-3">
         <IconButton label="Previous day" onClick={() => stepDay(-1)}>
@@ -96,46 +100,78 @@ export default function Today() {
         </IconButton>
       </header>
 
-      {/* ---------- Hero ---------- */}
-      <Card glow className="flex flex-col items-center gap-5 overflow-hidden py-6">
-        <EnergyRing
-          consumed={energy}
-          target={targets.energyKcal + exerciseBonus}
-          macros={macroData}
-        />
-
-        {/* Legend for the inner arcs. The arcs carry the proportions; these
-            carry the numbers. */}
-        <div className="grid w-full grid-cols-3 gap-2">
-          {macroData.map((macro) => (
-            <MacroLegend key={macro.key} macro={macro} />
-          ))}
-        </div>
-
-        <div className="grid w-full grid-cols-3 divide-x divide-border border-t border-border pt-4 text-center">
-          <Stat label="Eaten" value={Math.round(energy)} />
-          <Stat
-            label="Target"
-            value={Math.round(targets.energyKcal + exerciseBonus)}
-            accent
+      {/* ---------- Energy ---------- */}
+      {/* Gauge on the left with the figures stacked beside it, rather than a
+          big ring with everything underneath: the same information in about
+          half the height, so the diary is visible without scrolling. */}
+      <section>
+      <SectionLabel
+        action={
+          <button
             onClick={() => openSheet({ kind: 'goals' })}
-          />
-          <Stat label={exerciseBonus > 0 ? 'Exercise' : 'Burned'} value={Math.round(dayData.exerciseKcal)} />
+            className="text-[12.5px] font-semibold text-brand"
+          >
+            Adjust
+          </button>
+        }
+      >
+        Calories
+      </SectionLabel>
+      <Card glow className="overflow-hidden">
+        <div className="flex items-center gap-4">
+          <EnergyRing consumed={energy} target={targets.energyKcal + exerciseBonus} />
+
+          <div className="min-w-0 flex-1 space-y-2">
+            <StatRow
+              icon={<IconFlame size={15} />}
+              label="Eaten"
+              value={Math.round(energy)}
+              tone="carbs"
+            />
+            <StatRow
+              icon={<IconTarget size={15} />}
+              label="Target"
+              value={Math.round(targets.energyKcal + exerciseBonus)}
+              tone="brand"
+              onClick={() => openSheet({ kind: 'goals' })}
+            />
+            <StatRow
+              icon={<IconBolt size={15} />}
+              label={exerciseBonus > 0 ? 'Exercise' : 'Burned'}
+              value={Math.round(dayData.exerciseKcal)}
+              tone="fiber"
+            />
+          </div>
         </div>
-
-        <WaterRow
-          day={day}
-          ml={dayData.waterMl}
-          targetMl={derived.nutrientTargets.get(N.WATER)?.target ?? 3000}
-        />
-
-        <button
-          onClick={() => openSheet({ kind: 'nutrient-detail', day })}
-          className="rounded-full border border-border bg-surface-2 px-4 py-2 text-[13px] font-medium text-brand transition-colors hover:border-brand/40 hover:bg-brand-soft"
-        >
-          All nutrients →
-        </button>
       </Card>
+      </section>
+
+      {/* ---------- Macros ---------- */}
+      <section>
+      <SectionLabel
+        action={
+          <button
+            onClick={() => openSheet({ kind: 'nutrient-detail', day })}
+            className="text-[12.5px] font-semibold text-brand"
+          >
+            All nutrients
+          </button>
+        }
+      >
+        Macronutrients
+      </SectionLabel>
+      <Card className="space-y-3.5">
+        {macroData.map((macro) => (
+          <MacroRow key={macro.key} macro={macro} />
+        ))}
+      </Card>
+      </section>
+
+      <WaterRow
+        day={day}
+        ml={dayData.waterMl}
+        targetMl={derived.nutrientTargets.get(N.WATER)?.target ?? 3000}
+      />
 
       {/* ---------- Adaptive status ---------- */}
       {showLearning && (
@@ -162,60 +198,50 @@ export default function Today() {
       )}
 
       {/* ---------- Meals ---------- */}
-      {/* Adding food now lives entirely behind the central button, so the diary
-          starts right below the summary instead of being pushed under a row of
-          tiles stranded mid-screen. */}
-      <div className="mt-6 space-y-5">
+      <section>
+      <SectionLabel>Diary</SectionLabel>
+      <div className="space-y-2.5">
         {profile.meals.map((meal) => {
           const entries = dayData.entries.filter((e) => e.mealId === meal.id);
           const mealKcal = entries.reduce((sum, e) => sum + (e.nutrients[N.ENERGY] ?? 0), 0);
 
           return (
-            <section key={meal.id}>
-              <SectionLabel
-                action={
-                  <span className="text-[12px] font-medium text-faint tnum">
-                    {formatCount(mealKcal)} kcal
+            <Card key={meal.id} padded={false} className="overflow-hidden">
+              {/* Header doubles as the add control: the meal name, what it adds
+                  up to, and a target big enough to hit without aiming. */}
+              <div className="flex items-center gap-3 px-4 py-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-[17px]">
+                  {MEAL_GLYPH[meal.id] ?? '🍽️'}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15px] font-semibold">{meal.name}</span>
+                  <span className="block text-[12px] text-faint tnum">
+                    {entries.length === 0
+                      ? 'Nothing yet'
+                      : `${formatCount(mealKcal)} kcal · ${entries.length} ${entries.length === 1 ? 'item' : 'items'}`}
                   </span>
-                }
-              >
-                {meal.name}
-              </SectionLabel>
+                </span>
+                <button
+                  onClick={() => openSheet({ kind: 'add-food', mealId: meal.id, day })}
+                  aria-label={`Add food to ${meal.name}`}
+                  className="brand-gradient grid size-9 shrink-0 place-items-center rounded-full text-brand-contrast shadow-[0_0_12px_-3px_var(--ff-brand-glow)] transition-transform active:scale-90"
+                >
+                  <IconPlus size={19} strokeWidth={2.25} />
+                </button>
+              </div>
 
-              <Card padded={false} className="overflow-hidden">
-                {entries.map((entry, index) => (
-                  <EntryRow
-                    key={entry.id}
-                    entry={entry}
-                    index={index}
-                    mealId={meal.id}
-                    day={day}
-                  />
-                ))}
-
-                <div className={cx('flex items-center', entries.length > 0 && 'border-t border-border')}>
-                  <button
-                    onClick={() => openSheet({ kind: 'add-food', mealId: meal.id, day })}
-                    className="flex flex-1 items-center gap-2 px-4 py-3 text-[14px] font-medium text-brand transition-colors hover:bg-surface-2"
-                  >
-                    <IconPlus size={17} />
-                    Add food
-                  </button>
-                  {entries.length > 0 && (
-                    <IconButton
-                      label={`Copy ${meal.name} to another day`}
-                      onClick={() => openSheet({ kind: 'add-food', mealId: meal.id, day })}
-                      className="mr-2"
-                    >
-                      <IconCopy size={16} />
-                    </IconButton>
-                  )}
+              {entries.length > 0 && (
+                <div className="border-t border-border">
+                  {entries.map((entry, index) => (
+                    <EntryRow key={entry.id} entry={entry} index={index} mealId={meal.id} day={day} />
+                  ))}
                 </div>
-              </Card>
-            </section>
+              )}
+            </Card>
           );
         })}
       </div>
+      </section>
 
       {/* ---------- Complete-log marker ---------- */}
       {dayData.entries.length > 0 && (
@@ -244,55 +270,65 @@ export default function Today() {
   );
 }
 
-const MACRO_LEGEND_COLOR: Record<MacroBarDatum['key'], string> = {
-  protein: 'var(--color-protein)',
-  carbs: 'var(--color-carbs)',
-  fat: 'var(--color-fat)',
+/**
+ * A glyph per meal. Purely to give each row an anchor the eye can find while
+ * scrolling — the text alone made four identical grey blocks.
+ */
+const MEAL_GLYPH: Record<string, string> = {
+  breakfast: '🍳',
+  lunch: '🥗',
+  dinner: '🍲',
+  snacks: '🍎',
 };
 
-function MacroLegend({ macro }: { macro: MacroBarDatum }) {
-  const shown = useAnimatedNumber(macro.consumed, { duration: 700 });
-  const color = MACRO_LEGEND_COLOR[macro.key];
-  return (
-    <div className="text-center">
-      <div className="flex items-center justify-center gap-1.5">
-        <span
-          className="size-[7px] rounded-full"
-          style={{ background: color, boxShadow: `0 0 8px -1px ${color}` }}
-        />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.07em] text-faint">
-          {macro.label}
-        </span>
-      </div>
-      <div className="mt-1 text-[13.5px] tnum">
-        <span className="font-semibold text-text">{formatCount(shown)}</span>
-        <span className="text-faint"> / {formatCount(macro.target)} g</span>
-      </div>
-    </div>
-  );
-}
+const TONE: Record<string, string> = {
+  brand: 'var(--color-brand)',
+  carbs: 'var(--color-carbs)',
+  fiber: 'var(--color-fiber)',
+};
 
-function Stat({
+/**
+ * One figure beside the gauge: tinted glyph, label, value. Stacking these
+ * vertically rather than spreading them in a row under the gauge keeps the
+ * whole summary to roughly the height of the gauge itself.
+ */
+function StatRow({
+  icon,
   label,
   value,
-  accent,
+  tone,
   onClick,
 }: {
+  icon: React.ReactNode;
   label: string;
   value: number;
-  accent?: boolean;
+  tone: keyof typeof TONE;
   onClick?: () => void;
 }) {
   const shown = useAnimatedNumber(value, { duration: 650 });
+  const color = TONE[tone] ?? 'var(--color-brand)';
   const Tag = onClick ? 'button' : 'div';
+
   return (
-    <Tag onClick={onClick} className={cx('py-1', onClick && 'transition-opacity hover:opacity-70')}>
-      <div className={cx('text-[20px] font-semibold tracking-[-0.02em] tnum', accent && 'brand-text')}>
-        {formatCount(shown)}
-      </div>
-      <div className="mt-1 text-[10.5px] font-medium uppercase tracking-[0.09em] text-faint">
-        {label}
-      </div>
+    <Tag
+      onClick={onClick}
+      className={cx(
+        'flex w-full items-center gap-2.5 rounded-[--radius-input] border border-border bg-surface-2 px-2.5 py-2 text-left',
+        onClick && 'transition-colors hover:border-brand/40',
+      )}
+    >
+      <span
+        className="grid size-7 shrink-0 place-items-center rounded-lg"
+        style={{ background: `color-mix(in oklab, ${color} 16%, transparent)`, color }}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[10px] font-semibold uppercase tracking-[0.09em] text-faint">
+          {label}
+        </span>
+        <span className="block text-[15px] font-semibold tnum">{formatCount(shown)}</span>
+      </span>
     </Tag>
   );
 }

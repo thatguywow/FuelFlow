@@ -171,6 +171,27 @@ export const IconSettings = (p: IconProps) => (
   </Svg>
 );
 
+export const IconTarget = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <circle cx="12" cy="12" r="4.5" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+  </Svg>
+);
+
+export const IconBolt = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M13 3 5.5 13.5H11l-1 7.5L18.5 10H13Z" />
+  </Svg>
+);
+
+export const IconFlash = (p: IconProps & { off?: boolean }) => (
+  <Svg {...p}>
+    <path d="M13 3 5.5 13.5H11l-1 7.5L18.5 10H13Z" />
+    {p.off && <path d="M3 3l18 18" />}
+  </Svg>
+);
+
 export const IconInfo = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="12" cy="12" r="8.5" />

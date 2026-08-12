@@ -141,6 +141,13 @@ export interface UserProfile {
   /** Custom micronutrient targets keyed by nutrient id; overrides the DRI table. */
   nutrientTargetOverrides?: Record<number, number>;
 
+  /**
+   * Daily water goal in millilitres. The reference intake counts water from
+   * food as well, which makes it a poor drinking target — most people want to
+   * set their own, so this overrides it when present.
+   */
+  waterTargetMl?: number;
+
   /** Day the user started, used for streaks and the "since" copy. */
   startedOn: DayKey;
 }

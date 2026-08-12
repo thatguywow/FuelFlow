@@ -2,16 +2,19 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useUi } from '../state/ui';
 import { useTargets } from '../state/useTargets';
-import { addWater, deleteWater, waterEntriesForDay } from '../db/repo';
+import { addWater, deleteWater, saveProfile, waterEntriesForDay } from '../db/repo';
 import { formatVolume } from '../core/units';
 import { formatTime, type DayKey } from '../core/dates';
 import { N } from '../core/nutrients';
-import { Button, Card, EmptyState, IconButton, Input, List, Sheet } from '../ui/primitives';
+import { Button, Card, EmptyState, IconButton, Input, List, Sheet, cx } from '../ui/primitives';
 import { useAnimatedNumber, tapFeedback } from '../ui/motion';
 import { IconDroplet, IconPlus, IconTrash } from '../ui/icons';
 
 /** Common glass and bottle sizes, so the usual amount is one tap. */
 const PRESETS = [200, 250, 330, 500, 750];
+
+/** Round daily goals people actually pick. */
+const GOAL_PRESETS = [1500, 2000, 2500, 3000, 3500];
 
 /**
  * Water for a day: the running total, one-tap amounts, and every individual
@@ -23,6 +26,16 @@ export default function Water({ day }: { day: DayKey }) {
   const toast = useUi((s) => s.toast);
   const derived = useTargets();
   const [custom, setCustom] = useState('');
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [goalDraft, setGoalDraft] = useState('');
+
+  const saveGoal = async (ml: number) => {
+    if (!(ml >= 250)) return;
+    await saveProfile({ waterTargetMl: Math.round(ml) });
+    setEditingGoal(false);
+    setGoalDraft('');
+    toast(`Daily goal set to ${formatVolume(ml)}`);
+  };
 
   const entries = useLiveQuery(() => waterEntriesForDay(day), [day], []);
   const total = entries.reduce((sum, entry) => sum + entry.ml, 0);
@@ -63,10 +76,53 @@ export default function Water({ day }: { day: DayKey }) {
               }}
             />
           </div>
-          <p className="text-[12px] leading-relaxed text-faint">
-            The target is the reference intake for total water, which includes what you get from
-            food — so drinks alone reaching it is not the expectation.
-          </p>
+          <button
+            onClick={() => setEditingGoal((v) => !v)}
+            className="text-[12.5px] font-semibold text-brand"
+          >
+            {editingGoal ? 'Cancel' : 'Change daily goal'}
+          </button>
+
+          {editingGoal && (
+            <div className="space-y-2 border-t border-border pt-3">
+              <div className="flex flex-wrap gap-1.5">
+                {GOAL_PRESETS.map((ml) => (
+                  <button
+                    key={ml}
+                    onClick={() => void saveGoal(ml)}
+                    className={cx(
+                      'rounded-full px-3 py-1.5 text-[12.5px] transition-colors',
+                      target === ml
+                        ? 'brand-gradient font-medium text-brand-contrast'
+                        : 'bg-surface-2 text-dim hover:bg-surface-3',
+                    )}
+                  >
+                    {formatVolume(ml)}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  value={goalDraft}
+                  onChange={(event) => setGoalDraft(event.target.value)}
+                  placeholder="Your own goal, in ml"
+                />
+                <Button
+                  variant="primary"
+                  disabled={!(Number(goalDraft) >= 250)}
+                  onClick={() => void saveGoal(Number(goalDraft))}
+                >
+                  Set
+                </Button>
+              </div>
+              <p className="text-[11.5px] leading-relaxed text-faint">
+                The default comes from the reference intake for total water, which counts moisture
+                from food too — so it is deliberately higher than a drinking target.
+              </p>
+            </div>
+          )}
         </Card>
 
         <section>

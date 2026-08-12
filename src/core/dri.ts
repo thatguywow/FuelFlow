@@ -174,10 +174,14 @@ export function dailyNutrientTargets(ctx: TargetContext): Map<number, NutrientTa
   // Trans fat: no safe level; the target is simply "as low as possible".
   out.set(N.TRANS_FAT, { target: 0, isLimit: true, basis: 'computed' });
 
-  // Water AI (IOM total water, including food moisture): 3.7 L male, 2.7 L female.
+  // Water AI (IOM total water, including food moisture): 3.7 L male, 2.7 L
+  // female. That figure counts moisture from food, so as a *drinking* target it
+  // is misleadingly high — hence the override.
   out.set(N.WATER, {
-    target: profile.sex === 'male' ? 3700 : profile.sex === 'female' ? 2700 : 3200,
-    basis: 'AI',
+    target:
+      profile.waterTargetMl ??
+      (profile.sex === 'male' ? 3700 : profile.sex === 'female' ? 2700 : 3200),
+    basis: profile.waterTargetMl ? 'custom' : 'AI',
   });
 
   for (const [idText, mgPerKg] of Object.entries(AMINO_MG_PER_KG)) {

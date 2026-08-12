@@ -12,7 +12,7 @@ import {
   type ScannerHandle,
 } from '../scan/barcode';
 import { Button, Card, EmptyState, Input, Sheet, cx } from '../ui/primitives';
-import { IconBarcode, IconCheck, IconSparkle } from '../ui/icons';
+import { IconBarcode, IconCheck, IconFlash, IconSparkle } from '../ui/icons';
 
 type Phase = 'checking' | 'needs-permission' | 'denied' | 'scanning' | 'looking-up' | 'error';
 
@@ -219,14 +219,32 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
 
         {(phase === 'checking' || phase === 'scanning') && scanSource() !== 'native' && (
           <>
-            <div className="relative aspect-[4/3] overflow-hidden rounded-[--radius-card] bg-black">
+            {/* A tall viewfinder with the surroundings dimmed and only the
+                framing window left clear. A small boxed preview makes people
+                hold the phone too far back; filling the space is what tells
+                them to bring the packet close. */}
+            <div className="relative aspect-[3/4] overflow-hidden rounded-[--radius-card] bg-black">
               <video ref={videoRef} className="size-full object-cover" playsInline muted autoPlay />
 
-              {/* Framing guide — a rounded window with a bright centre line,
-                  which is what people instinctively line a barcode up against. */}
-              <div className="pointer-events-none absolute inset-0 grid place-items-center">
-                <div className="relative h-28 w-4/5 rounded-xl border-2 border-white/70">
-                  <div className="absolute inset-x-3 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-danger/80" />
+              {/* Scrim with a cut-out window, built from a box-shadow so the
+                  hole is genuinely transparent rather than a lighter overlay. */}
+              <div className="pointer-events-none absolute inset-0">
+                <div
+                  className="absolute left-1/2 top-1/2 h-32 w-[82%] -translate-x-1/2 -translate-y-1/2 rounded-2xl"
+                  style={{ boxShadow: '0 0 0 9999px rgb(0 0 0 / 0.55)' }}
+                />
+                <div className="absolute left-1/2 top-1/2 h-32 w-[82%] -translate-x-1/2 -translate-y-1/2">
+                  {/* Corner brackets rather than a full outline: they frame
+                      without hiding the edges of the barcode itself. */}
+                  {[
+                    'left-0 top-0 border-l-2 border-t-2 rounded-tl-xl',
+                    'right-0 top-0 border-r-2 border-t-2 rounded-tr-xl',
+                    'left-0 bottom-0 border-l-2 border-b-2 rounded-bl-xl',
+                    'right-0 bottom-0 border-r-2 border-b-2 rounded-br-xl',
+                  ].map((corner) => (
+                    <span key={corner} className={cx('absolute size-7 border-white/90', corner)} />
+                  ))}
+                  <span className="absolute inset-x-4 top-1/2 h-px -translate-y-1/2 bg-brand/70 shadow-[0_0_10px_1px_var(--ff-brand-glow)]" />
                 </div>
               </div>
 
@@ -236,18 +254,18 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
                   aria-pressed={torchOn}
                   aria-label="Toggle flash"
                   className={cx(
-                    'absolute bottom-3 right-3 grid size-11 place-items-center rounded-full backdrop-blur transition-colors',
-                    torchOn ? 'bg-white text-black' : 'bg-black/50 text-white',
+                    'absolute right-3 top-3 grid size-11 place-items-center rounded-full backdrop-blur transition-colors',
+                    torchOn ? 'bg-white text-black' : 'bg-black/45 text-white',
                   )}
                 >
-                  <TorchIcon on={torchOn} />
+                  <IconFlash size={20} off={!torchOn} />
                 </button>
               )}
-            </div>
 
-            <p className="mt-4 text-center text-[13px] text-faint">
-              {phase === 'checking' ? 'Starting the camera…' : 'Line the barcode up inside the frame.'}
-            </p>
+              <p className="absolute inset-x-0 bottom-4 text-center text-[13px] font-medium text-white/85">
+                {phase === 'checking' ? 'Starting the camera…' : 'Hold the barcode inside the frame'}
+              </p>
+            </div>
           </>
         )}
 
@@ -293,11 +311,3 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
   );
 }
 
-function TorchIcon({ on }: { on: boolean }) {
-  return (
-    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M7 2h10l-1 6 2 2v3l-2 2v7H8v-7l-2-2v-3l2-2Z" />
-      {!on && <path d="M3 3l18 18" />}
-    </svg>
-  );
-}

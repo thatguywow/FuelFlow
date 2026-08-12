@@ -22,23 +22,29 @@ function pointOnRing(cx: number, cy: number, r: number, turn: number) {
   return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
 }
 
-function arcPath(cx: number, cy: number, r: number, turn: number): string {
-  // A full turn would draw an arc back to its own start point, which renders as
-  // nothing at all — hold just short of closing.
-  const t = Math.min(0.9999, Math.max(0, turn));
-  const start = pointOnRing(cx, cy, r, 0);
-  const end = pointOnRing(cx, cy, r, t);
-  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${t > 0.5 ? 1 : 0} 1 ${end.x} ${end.y}`;
+/** Arc between two positions on the ring, both as fractions of a full turn. */
+function arcBetween(cx: number, cy: number, r: number, fromTurn: number, toTurn: number): string {
+  const start = pointOnRing(cx, cy, r, fromTurn);
+  const end = pointOnRing(cx, cy, r, toTurn);
+  const large = Math.abs(toTurn - fromTurn) > 0.5 ? 1 : 0;
+  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${large} 1 ${end.x} ${end.y}`;
 }
+
+/**
+ * The gauge is an open 270° arc rather than a closed ring: the gap at the
+ * bottom gives the eye a start and an end, so a nearly-empty gauge reads as
+ * "barely begun" instead of as a broken circle.
+ */
+const GAUGE_START = -0.375;
+const GAUGE_SWEEP = 0.75;
 
 export function EnergyRing({
   consumed,
   target,
-  size = 200,
-  stroke = 11,
+  size = 168,
+  stroke = 12,
   label,
   sublabel,
-  macros,
 }: {
   consumed: number;
   target: number;
@@ -46,8 +52,6 @@ export function EnergyRing({
   stroke?: number;
   label?: string;
   sublabel?: string;
-  /** Optional inner arcs, drawn concentrically inside the energy ring. */
-  macros?: MacroBarDatum[];
 }) {
   // Gradient and filter ids must be unique per instance or a second ring on the
   // page silently reuses the first one's definitions.
@@ -58,93 +62,83 @@ export function EnergyRing({
 
   const ratio = target > 0 ? consumed / target : 0;
   const over = ratio > 1;
-  const targetTurn = over ? Math.min(1, ratio - 1) : Math.min(1, Math.max(0, ratio));
+  const fill = over ? Math.min(1, ratio - 1) : Math.min(1, Math.max(0, ratio));
 
-  // The arc travels to its new length rather than snapping, and the head dot
-  // rides along with it. This is the single most "alive" thing on the screen.
-  const turn = useAnimatedNumber(targetTurn, { duration: 900, epsilon: 0.0015 });
+  const progress = useAnimatedNumber(fill, { duration: 900, epsilon: 0.0015 });
   const remaining = target - consumed;
   const shownRemaining = useAnimatedNumber(Math.abs(remaining), { duration: 700 });
 
   const primary = label ?? formatCount(shownRemaining);
   const secondary = sublabel ?? (remaining >= 0 ? 'kcal left' : 'kcal over');
-
-  const head = pointOnRing(cx, cy, radius, turn);
   const arcColor = over ? 'var(--color-warn)' : `url(#ring-${uid})`;
 
   return (
     <div className="relative grid place-items-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="overflow-visible" aria-hidden="true">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
         <defs>
-          {/* Anchored to the ring's own box in user space and running top to
-              bottom, so the arc starts on cyan at 12 o'clock and deepens to
-              indigo as it sweeps — the same travel as the app mark. A gradient
-              defined in percentages sampled only its middle here, which is why
-              the whole arc came out one flat blue. */}
+          {/* Anchored to the gauge's own box in user space and running top to
+              bottom, so the arc deepens from cyan to indigo as it sweeps — the
+              same travel as the app mark. A gradient defined in percentages
+              sampled only its middle, which flattened the whole arc to one blue. */}
           <linearGradient id={`ring-${uid}`} gradientUnits="userSpaceOnUse" x1={cx} y1={0} x2={cx} y2={size}>
             <stop offset="0%" stopColor="var(--ff-brand)" />
             <stop offset="50%" stopColor="var(--ff-brand-2)" />
             <stop offset="100%" stopColor="var(--ff-brand-3)" />
           </linearGradient>
-          {/* A tight drop shadow reads as light coming off the arc. The previous
-              wide gaussian blur just produced a mushy halo. */}
-          <filter id={`glow-${uid}`} x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor="var(--ff-brand)" floodOpacity="0.5" />
+          {/* The filter region must be in user space covering the whole gauge.
+              As a percentage it is relative to the *path's* bounding box, and a
+              short arc has a tiny box — so the glow was being clipped square,
+              which is what produced the notch at the start of the progress. */}
+          <filter
+            id={`glow-${uid}`}
+            filterUnits="userSpaceOnUse"
+            x={-size * 0.25}
+            y={-size * 0.25}
+            width={size * 1.5}
+            height={size * 1.5}
+          >
+            <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor="var(--ff-brand)" floodOpacity="0.45" />
           </filter>
         </defs>
 
-        {/* The track needs to be clearly present, not almost-invisible: without
-            it the arc has nothing to be measured against and the ring stops
-            reading as a proportion. */}
-        <circle
-          cx={cx}
-          cy={cy}
-          r={radius}
+        <path
+          d={arcBetween(cx, cy, radius, GAUGE_START, GAUGE_START + GAUGE_SWEEP)}
           fill="none"
           stroke="var(--color-surface-3)"
           strokeWidth={stroke}
+          strokeLinecap="round"
         />
 
-        {/* Past the target the full ring turns amber and the overshoot rides on
-            top, so the eye reads "past the line" rather than "back near zero". */}
+        {/* Past the target the whole track turns amber and the overshoot rides
+            on top, so the eye reads "past the line" rather than "back at zero". */}
         {over && (
-          <circle cx={cx} cy={cy} r={radius} fill="none" stroke="var(--color-warn)" strokeWidth={stroke} opacity={0.28} />
-        )}
-
-        {turn > 0.002 && (
-          <>
-            <path
-              d={arcPath(cx, cy, radius, turn)}
-              fill="none"
-              stroke={arcColor}
-              strokeWidth={stroke}
-              strokeLinecap="round"
-              filter={`url(#glow-${uid})`}
-            />
-            {/* Head dot: marks the exact position and gives the arc a leading
-                edge instead of a blunt end. */}
-            <circle cx={head.x} cy={head.y} r={stroke / 2 - 3} fill="var(--color-bg-elevated)" opacity={0.9} />
-          </>
-        )}
-
-        {/* Concentric macro arcs. The centre of a single ring is a lot of dead
-            space, and the three macros are the natural thing to put there —
-            same glanceable geometry, three times the information, and it lets
-            the card drop a separate row of bars entirely. */}
-        {macros?.map((macro, index) => (
-          <MacroArc
-            key={macro.key}
-            macro={macro}
-            cx={cx}
-            cy={cy}
-            radius={radius - stroke / 2 - 5 - index * 9 - 2.5}
+          <path
+            d={arcBetween(cx, cy, radius, GAUGE_START, GAUGE_START + GAUGE_SWEEP)}
+            fill="none"
+            stroke="var(--color-warn)"
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            opacity={0.3}
           />
-        ))}
+        )}
+
+        {/* Below this the arc is shorter than its own round cap, which renders
+            as a stray dot floating at the start rather than as progress. */}
+        {progress > 0.012 && (
+          <path
+            d={arcBetween(cx, cy, radius, GAUGE_START, GAUGE_START + GAUGE_SWEEP * progress)}
+            fill="none"
+            stroke={arcColor}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            filter={`url(#glow-${uid})`}
+          />
+        )}
       </svg>
 
       <div className="absolute inset-0 grid place-content-center text-center">
-        <div className="text-[38px] font-semibold leading-none tracking-[-0.04em] tnum">{primary}</div>
-        <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">
+        <div className="text-[34px] font-semibold leading-none tracking-[-0.035em] tnum">{primary}</div>
+        <div className="mt-2 text-[9.5px] font-semibold uppercase tracking-[0.14em] text-faint">
           {secondary}
         </div>
       </div>
@@ -152,38 +146,44 @@ export function EnergyRing({
   );
 }
 
-/** One macro arc inside the energy ring, animated like the outer one. */
-function MacroArc({
-  macro,
-  cx: centerX,
-  cy: centerY,
-  radius,
-}: {
-  macro: MacroBarDatum;
-  cx: number;
-  cy: number;
-  radius: number;
-}) {
+/**
+ * Macro row: label, value, and a bar. Concentric arcs inside the gauge looked
+ * dense but were hard to read at a glance — three nested strokes a few pixels
+ * apart do not tell you which is which, and the numbers had to be repeated
+ * underneath anyway. A labelled bar says the same thing in one pass.
+ */
+export function MacroRow({ macro }: { macro: MacroBarDatum }) {
   const ratio = macro.target > 0 ? macro.consumed / macro.target : 0;
   const over = ratio > 1.02;
-  const turn = useAnimatedNumber(Math.min(1, Math.max(0, ratio)), { duration: 900, epsilon: 0.0015 });
   const color = over ? 'var(--color-warn)' : MACRO_COLOR[macro.key];
+  const width = useAnimatedNumber(Math.min(100, ratio * 100), { duration: 800, epsilon: 0.2 });
+  const shown = useAnimatedNumber(macro.consumed, { duration: 700 });
 
   return (
-    <>
-      {/* Fainter than the energy track: three more full-strength grooves in the
-          middle of the card turn the ring into a target rather than a reading. */}
-      <circle cx={centerX} cy={centerY} r={radius} fill="none" stroke="var(--color-surface-2)" strokeWidth={5} opacity={0.55} />
-      {turn > 0.004 && (
-        <path
-          d={arcPath(centerX, centerY, radius, turn)}
-          fill="none"
-          stroke={color}
-          strokeWidth={5}
-          strokeLinecap="round"
+    <div>
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <span className="flex items-center gap-2">
+          <span
+            className="size-[7px] rounded-full"
+            style={{ background: color, boxShadow: `0 0 8px -1px ${color}` }}
+          />
+          <span className="text-[13.5px] font-medium">{macro.label}</span>
+        </span>
+        <span className="text-[13px] tnum">
+          <span className="font-semibold">{formatCount(shown)}</span>
+          <span className="text-faint"> / {formatCount(macro.target)} g</span>
+        </span>
+      </div>
+      <div
+        className="h-1.5 overflow-hidden rounded-full bg-surface-2"
+        style={{ boxShadow: 'inset 0 1px 2px rgb(0 0 0 / 0.25)' }}
+      >
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${width}%`, background: color, boxShadow: `0 0 8px -1px ${color}` }}
         />
-      )}
-    </>
+      </div>
+    </div>
   );
 }
 
