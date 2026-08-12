@@ -106,16 +106,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Written via a heredoc rather than inline: a multi-line --notes string
+          # puts lines at column zero, which ends the YAML block scalar early and
+          # makes the whole workflow unparseable.
+          cat > notes.md <<'NOTES'
+          Debug APK for testing the native app.
+
+          **Install:** download this file on your phone, then allow installation
+          from unknown sources when prompted.
+
+          Debug-signed and unoptimised — for testing, not for the Play Store.
+          Everything works offline except branded-product lookups, which stream
+          from the hosted database over HTTP range requests.
+          NOTES
+          sed -i 's/^          //' notes.md
+          echo "" >> notes.md
+          echo "Built from \`${GITHUB_SHA::7}\`." >> notes.md
+
           gh release delete preview --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
           gh release create preview fuelflow-debug.apk \
             --repo "$GITHUB_REPOSITORY" \
             --title "FuelFlow preview build" \
             --prerelease \
-            --notes "Debug APK built from \`${GITHUB_SHA::7}\` on $(date -u +%Y-%m-%d).
-
-**Install:** download on your phone, then allow installation from unknown sources when prompted.
-
-Debug-signed and unoptimised — for testing only, not for the Play Store. The app works offline apart from branded-product lookups, which stream from the hosted database over range requests."
+            --notes-file notes.md
 
       - name: Summary
         run: |
