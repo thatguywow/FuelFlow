@@ -35,7 +35,7 @@ export default function Body() {
     return Object.fromEntries(entries) as Partial<Record<BiometricType, { day: string; value: number }[]>>;
   }, []);
 
-  if (!derived) return <div className="safe-t p-4"><div className="skeleton h-64 rounded-[--radius-card]" /></div>;
+  if (!derived) return <div className="safe-t p-4"><div className="skeleton h-64 rounded-(--radius-card)" /></div>;
 
   const { profile, currentWeightKg, trend, rate } = derived;
   const unit = profile.display.massUnit;

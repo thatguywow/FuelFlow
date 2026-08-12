@@ -135,8 +135,8 @@ export default function AddMenu() {
               action.run();
             }}
             className={cx(
-              'panel flex w-full max-w-[17rem] items-center gap-3 px-3.5 py-2 text-left shadow-[--shadow-e2]',
-              'transition-[opacity,transform] duration-300 ease-[--ease-out-quint]',
+              'panel flex w-full max-w-[17rem] items-center gap-3 px-3.5 py-2 text-left shadow-(--shadow-e2)',
+              'transition-[opacity,transform] duration-300 ease-(--ease-out-quint)',
               'active:scale-[0.97] hover:border-border-strong',
               open ? 'pointer-events-auto translate-y-0 opacity-100' : 'translate-y-4 opacity-0',
             )}
@@ -176,14 +176,14 @@ export function AddButton() {
         aria-expanded={open}
         className={cx(
           'brand-gradient glow-brand absolute -top-6 grid size-14 place-items-center rounded-2xl',
-          'text-brand-contrast transition-transform duration-200 ease-[--ease-spring] active:scale-90',
+          'text-brand-contrast transition-transform duration-200 ease-(--ease-spring) active:scale-90',
         )}
       >
         {/* Only the glyph rotates. Rotating the button turns a rounded square
             into a diamond, which reads as a glitch rather than a state. */}
         <span
           className={cx(
-            'grid place-items-center transition-transform duration-300 ease-[--ease-spring]',
+            'grid place-items-center transition-transform duration-300 ease-(--ease-spring)',
             open && 'rotate-45',
           )}
         >

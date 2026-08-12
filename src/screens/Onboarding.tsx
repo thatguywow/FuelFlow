@@ -181,7 +181,7 @@ export default function Onboarding() {
             step={0.05}
             value={rate}
             onChange={(e) => setRate(Number(e.target.value))}
-            className="w-full accent-[--color-brand]"
+            className="w-full accent-(--color-brand)"
             aria-label="Rate per week"
           />
           <p className="text-[12.5px] leading-relaxed text-faint">

@@ -18,7 +18,7 @@ export default function More() {
   const openSheet = useUi((s) => s.openSheet);
   const [panel, setPanel] = useState<'none' | 'data' | 'about' | 'profile'>('none');
 
-  if (!derived) return <div className="safe-t p-4"><div className="skeleton h-64 rounded-[--radius-card]" /></div>;
+  if (!derived) return <div className="safe-t p-4"><div className="skeleton h-64 rounded-(--radius-card)" /></div>;
   const { profile } = derived;
 
   const update = (patch: Parameters<typeof saveProfile>[0]) => void saveProfile(patch);

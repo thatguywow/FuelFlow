@@ -223,7 +223,7 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
                 framing window left clear. A small boxed preview makes people
                 hold the phone too far back; filling the space is what tells
                 them to bring the packet close. */}
-            <div className="relative aspect-[3/4] overflow-hidden rounded-[--radius-card] bg-black">
+            <div className="relative aspect-[3/4] overflow-hidden rounded-(--radius-card) bg-black">
               <video ref={videoRef} className="size-full object-cover" playsInline muted autoPlay />
 
               {/* Scrim with a cut-out window, built from a box-shadow so the

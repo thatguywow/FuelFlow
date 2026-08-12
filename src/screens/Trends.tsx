@@ -33,7 +33,7 @@ export default function Trends() {
     [range],
   );
 
-  if (!derived || !summaries) return <div className="safe-t p-4"><div className="skeleton h-64 rounded-[--radius-card]" /></div>;
+  if (!derived || !summaries) return <div className="safe-t p-4"><div className="skeleton h-64 rounded-(--radius-card)" /></div>;
 
   const { targets, adaptive, formulaTdee, profile, trend, rate } = derived;
   const confidence = describeConfidence(adaptive);
@@ -239,7 +239,7 @@ export default function Trends() {
 
       <button
         onClick={() => openSheet({ kind: 'goals' })}
-        className="w-full rounded-[--radius-card] border border-border bg-surface p-4 text-left"
+        className="w-full rounded-(--radius-card) border border-border bg-surface p-4 text-left"
       >
         <p className="text-[15px] font-medium">Adjust goal and targets</p>
         <p className="mt-0.5 text-[12.5px] text-faint">

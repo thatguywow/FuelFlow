@@ -126,7 +126,7 @@ export default function QuickLog({ mealId, day }: { mealId: string; day: DayKey 
           />
         )}
 
-        {parsing && <div className="skeleton h-20 rounded-[--radius-card]" />}
+        {parsing && <div className="skeleton h-20 rounded-(--radius-card)" />}
 
         {items.map((item, index) => {
           const isDropped = dropped.has(index);

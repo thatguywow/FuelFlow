@@ -131,7 +131,7 @@ export default function Water({ day }: { day: DayKey }) {
               <button
                 key={ml}
                 onClick={() => void log(ml)}
-                className="flex-1 rounded-[--radius-input] border border-border bg-surface-2 px-2 py-2.5 text-[13px] font-medium transition-colors hover:border-brand/40 hover:bg-brand-soft active:scale-[0.97]"
+                className="flex-1 rounded-(--radius-input) border border-border bg-surface-2 px-2 py-2.5 text-[13px] font-medium transition-colors hover:border-brand/40 hover:bg-brand-soft active:scale-[0.97]"
               >
                 +{ml}
               </button>

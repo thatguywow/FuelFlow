@@ -181,7 +181,7 @@ export default function Today() {
       {showLearning && (
         <button
           onClick={() => useUi.getState().setTab('trends')}
-          className="mt-3 flex w-full items-start gap-3 rounded-[--radius-card] border border-border bg-brand-soft/40 p-3.5 text-left"
+          className="mt-3 flex w-full items-start gap-3 rounded-(--radius-card) border border-border bg-brand-soft/40 p-3.5 text-left"
         >
           <IconSparkle size={18} className="mt-0.5 shrink-0 text-brand" />
           <div>
@@ -192,7 +192,7 @@ export default function Today() {
       )}
 
       {targets.warnings.length > 0 && (
-        <div className="mt-3 rounded-[--radius-card] border border-warn/30 bg-warn/10 p-3.5">
+        <div className="mt-3 rounded-(--radius-card) border border-warn/30 bg-warn/10 p-3.5">
           {targets.warnings.map((warning) => (
             <p key={warning.code} className="text-[12.5px] leading-relaxed text-dim">
               {warning.message}
@@ -339,7 +339,7 @@ function StatRow({
     <Tag
       onClick={onClick}
       className={cx(
-        'flex w-full items-center gap-2.5 rounded-[--radius-input] border border-border bg-surface-2 px-2.5 py-2 text-left',
+        'flex w-full items-center gap-2.5 rounded-(--radius-input) border border-border bg-surface-2 px-2.5 py-2 text-left',
         onClick && 'transition-colors hover:border-brand/40',
       )}
     >
@@ -381,7 +381,7 @@ function EntryRow({
   return (
     <div
       className={cx(
-        'transition-[opacity,transform] duration-300 ease-[--ease-out-quint]',
+        'transition-[opacity,transform] duration-300 ease-(--ease-out-quint)',
         shown ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0',
       )}
     >
@@ -481,9 +481,9 @@ function TodaySkeleton() {
   return (
     <div className="safe-t space-y-3 px-4 pt-6">
       <div className="skeleton h-10 rounded-xl" />
-      <div className="skeleton h-80 rounded-[--radius-card]" />
-      <div className="skeleton h-24 rounded-[--radius-card]" />
-      <div className="skeleton h-24 rounded-[--radius-card]" />
+      <div className="skeleton h-80 rounded-(--radius-card)" />
+      <div className="skeleton h-24 rounded-(--radius-card)" />
+      <div className="skeleton h-24 rounded-(--radius-card)" />
     </div>
   );
 }

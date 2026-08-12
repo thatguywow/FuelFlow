@@ -583,7 +583,7 @@ export function BarChart({
         <div key={i} className="flex min-w-0 flex-1 flex-col items-center gap-1">
           <div
             className={cx(
-              'w-full rounded-[3px] transition-[height] duration-500 ease-[--ease-out-quint]',
+              'w-full rounded-[3px] transition-[height] duration-500 ease-(--ease-out-quint)',
               bar.value === 0
                 ? 'bg-surface-2'
                 : bar.highlight

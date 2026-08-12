@@ -30,7 +30,7 @@ const BUTTON_VARIANTS = {
 
 const BUTTON_SIZES = {
   sm: 'h-9 px-3.5 text-[13px] rounded-[0.75rem]',
-  md: 'h-11 px-4 text-[15px] rounded-[--radius-input]',
+  md: 'h-11 px-4 text-[15px] rounded-(--radius-input)',
   lg: 'h-[3.25rem] px-6 text-[16px] rounded-[1.125rem]',
 } as const;
 
@@ -124,7 +124,7 @@ export function List({ className, ...rest }: React.HTMLAttributes<HTMLDivElement
     <div
       {...rest}
       className={cx(
-        'overflow-hidden rounded-[--radius-card] border border-border bg-surface',
+        'overflow-hidden rounded-(--radius-card) border border-border bg-surface',
         '[&>*+*]:border-t [&>*+*]:border-border',
         className,
       )}
@@ -194,7 +194,7 @@ export function Input({ className, ...rest }: React.ComponentPropsWithRef<'input
     <input
       {...rest}
       className={cx(
-        'h-11 w-full rounded-[--radius-input] border border-border bg-surface-2 px-3.5 text-[15px] text-text',
+        'h-11 w-full rounded-(--radius-input) border border-border bg-surface-2 px-3.5 text-[15px] text-text',
         'transition-[border-color,box-shadow] duration-150 placeholder:text-faint',
         // A softer focus treatment: the previous ring was bright enough to read
         // as an error state on a dark surface.
@@ -210,7 +210,7 @@ export function Select({ className, ...rest }: React.ComponentPropsWithRef<'sele
     <select
       {...rest}
       className={cx(
-        'h-11 w-full rounded-[--radius-input] border border-border bg-surface-2 px-3.5 text-[15px] text-text',
+        'h-11 w-full rounded-(--radius-input) border border-border bg-surface-2 px-3.5 text-[15px] text-text',
         'transition-[border-color,box-shadow] duration-150',
         'focus:border-brand/60 focus:outline-none focus:ring-[3px] focus:ring-brand/12',
         className,
@@ -232,7 +232,7 @@ export function Segmented<T extends string>({
 }) {
   return (
     <div
-      className={cx('flex gap-1 rounded-[--radius-input] border border-border bg-surface-2 p-1', className)}
+      className={cx('flex gap-1 rounded-(--radius-input) border border-border bg-surface-2 p-1', className)}
       role="tablist"
     >
       {options.map((option) => {
@@ -246,7 +246,7 @@ export function Segmented<T extends string>({
             className={cx(
               'flex-1 rounded-[0.625rem] px-3 py-[7px] text-[13px] transition-all duration-200',
               active
-                ? 'bg-surface font-semibold text-text shadow-[--shadow-e1]'
+                ? 'bg-surface font-semibold text-text shadow-(--shadow-e1)'
                 : 'font-medium text-faint hover:text-dim',
             )}
           >
@@ -283,7 +283,7 @@ export function Toggle({
       <span
         className={cx(
           'absolute top-[3px] size-[1.125rem] rounded-full bg-white shadow-md',
-          'transition-[left] duration-200 ease-[--ease-spring]',
+          'transition-[left] duration-200 ease-(--ease-spring)',
           checked ? 'left-[1.5rem]' : 'left-[3px]',
         )}
       />
@@ -368,7 +368,7 @@ export function Sheet({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
       <div
-        className="absolute inset-0 animate-fade-in bg-[--ff-scrim] backdrop-blur-[2px]"
+        className="absolute inset-0 animate-fade-in bg-(--ff-scrim) backdrop-blur-[2px]"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -377,9 +377,9 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         className={cx(
-          'relative flex w-full flex-col overflow-hidden bg-bg-elevated shadow-[--shadow-e3] animate-sheet-in',
+          'relative flex w-full flex-col overflow-hidden bg-bg-elevated shadow-(--shadow-e3) animate-sheet-in',
           'border-t border-border sm:border',
-          'rounded-t-[--radius-sheet] sm:max-w-lg sm:rounded-[--radius-sheet]',
+          'rounded-t-(--radius-sheet) sm:max-w-lg sm:rounded-(--radius-sheet)',
           size === 'tall' ? 'h-[92dvh] sm:h-[86vh]' : 'max-h-[92dvh]',
         )}
       >
@@ -430,7 +430,7 @@ export function ToastHost() {
           key={toast.id}
           className={cx(
             'pointer-events-auto flex w-full max-w-sm items-center gap-3 rounded-2xl px-4 py-3',
-            'glass border border-border-strong shadow-[--shadow-e3] animate-pop-in',
+            'glass border border-border-strong shadow-(--shadow-e3) animate-pop-in',
           )}
         >
           <span className={cx('flex-1 text-[14px]', toast.tone === 'danger' && 'text-danger')}>
