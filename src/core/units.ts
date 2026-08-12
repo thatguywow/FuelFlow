@@ -113,6 +113,23 @@ export function formatEnergy(kcal: number, unit: EnergyUnit = 'kcal'): string {
   return `${formatCount(value)} ${unit}`;
 }
 
+/**
+ * Volume for display.
+ *
+ * Litres with one decimal is wrong below about a litre: 250 ml renders as
+ * "0.3 L", which looks like the app rounded your glass of water up by 50 ml.
+ * Millilitres are exact and are how drinks are labelled anyway, so small
+ * amounts stay in ml and only larger totals switch to litres.
+ */
+export function formatVolume(ml: number): string {
+  const rounded = Math.round(ml);
+  if (rounded < 1000) return `${rounded} ml`;
+  const litres = rounded / 1000;
+  // Two decimals only when the second one carries information.
+  const text = litres.toFixed(2).replace(/0$/, '').replace(/\.$/, '');
+  return `${text} L`;
+}
+
 /** Trim float noise from user-entered quantities (0.30000000000000004 → 0.3). */
 export function cleanNumber(value: number, decimals = 2): number {
   const factor = Math.pow(10, decimals);

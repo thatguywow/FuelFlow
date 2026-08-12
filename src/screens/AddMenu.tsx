@@ -1,17 +1,9 @@
 import { useEffect } from 'react';
 import { useUi } from '../state/ui';
 import { useTargets } from '../state/useTargets';
-import { addWater } from '../db/repo';
 import { cx } from '../ui/primitives';
 import { tapFeedback } from '../ui/motion';
-import {
-  IconBarcode,
-  IconBook,
-  IconDroplet,
-  IconPlus,
-  IconSearch,
-  IconSparkle,
-} from '../ui/icons';
+import { IconBarcode, IconBook, IconPlus, IconSearch, IconSparkle } from '../ui/icons';
 
 /**
  * The central add button and its menu.
@@ -52,7 +44,6 @@ export default function AddMenu() {
   const open = useUi((s) => s.addMenuOpen);
   const setOpen = useUi((s) => s.setAddMenu);
   const openSheet = useUi((s) => s.openSheet);
-  const toast = useUi((s) => s.toast);
   const day = useUi((s) => s.day);
   const derived = useTargets();
 
@@ -98,22 +89,13 @@ export default function AddMenu() {
     },
     {
       id: 'quick-log',
-      label: 'Describe a meal',
-      detail: '"2 eggs and oats"',
+      label: 'Log a whole meal',
+      detail: 'Write it out, log it in one go',
       icon: <IconSparkle size={19} />,
       run: () => openSheet({ kind: 'quick-log', mealId, day }),
     },
-    {
-      id: 'water',
-      label: 'Water',
-      detail: 'Add 250 ml',
-      icon: <IconDroplet size={19} />,
-      run: async () => {
-        await addWater(day, 250);
-        setOpen(false);
-        toast('250 ml logged');
-      },
-    },
+    // Water is deliberately absent: it has its own row on the Today card, one
+    // tap away, and having it in both places made the menu look padded.
   ];
 
   return (

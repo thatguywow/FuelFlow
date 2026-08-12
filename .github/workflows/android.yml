@@ -27,16 +27,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: npm
 
       # Capacitor 8's Gradle plugin needs a current JDK; the runner default is
       # older than that.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -77,7 +77,19 @@ jobs:
       - name: Add the Android platform
         run: |
           npx cap add android
+          # Must run before sync: the camera plugins do not declare CAMERA
+          # themselves, so without this the app silently has no camera access.
+          node scripts/patch-android-manifest.mjs
           npx cap sync android
+
+      - name: Verify the manifest declares camera access
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.CAMERA' "$MANIFEST" || {
+            echo "::error::CAMERA permission missing from $MANIFEST"
+            exit 1
+          }
+          echo "CAMERA permission present."
 
       - name: Assemble debug APK
         run: |
@@ -93,7 +105,7 @@ jobs:
           echo "size=$(du -h "$APK" | cut -f1)" >> $GITHUB_OUTPUT
           cp "$APK" fuelflow-debug.apk
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: fuelflow-apk
           path: fuelflow-debug.apk

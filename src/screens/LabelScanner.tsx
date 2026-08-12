@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useUi } from '../state/ui';
 import { logFood, upsertFood } from '../db/repo';
-import { parseNutritionLabel, recognizeLabelText, type ParsedLabel } from '../scan/barcode';
+import {
+  CameraDeniedError,
+  openAppSettings,
+  parseNutritionLabel,
+  recognizeLabelText,
+  type ParsedLabel,
+} from '../scan/barcode';
 import { N } from '../core/nutrients';
 import { formatCount } from '../core/format';
 import type { DayKey } from '../core/dates';
@@ -51,7 +57,9 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
   const toast = useUi((s) => s.toast);
 
   const native = Capacitor.isNativePlatform();
-  const [phase, setPhase] = useState<'idle' | 'reading' | 'form' | 'error'>(native ? 'idle' : 'form');
+  const [phase, setPhase] = useState<'idle' | 'reading' | 'form' | 'error' | 'denied'>(
+    native ? 'idle' : 'form',
+  );
   const [error, setError] = useState<string>();
   const [lines, setLines] = useState<string[]>([]);
 
@@ -76,6 +84,10 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
       applyParsed(parseNutritionLabel(text));
       setPhase('form');
     } catch (err) {
+      if (err instanceof CameraDeniedError) {
+        setPhase('denied');
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Could not read the label.');
       setPhase('error');
     }
@@ -177,6 +189,31 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
     >
       {phase === 'reading' && (
         <EmptyState icon={<IconBook size={26} />} title="Reading the label…" detail="Recognition runs on your device. Nothing is uploaded." />
+      )}
+
+      {phase === 'denied' && (
+        <div className="p-4">
+          <EmptyState
+            icon={<IconBook size={26} />}
+            title="Camera access is turned off"
+            detail="Reading a label needs the camera. It cannot be requested again once refused, so it has to be re-enabled in settings."
+          />
+          <div className="flex gap-2">
+            <Button
+              variant="primary"
+              className="flex-1"
+              onClick={async () => {
+                const opened = await openAppSettings();
+                if (!opened) toast('Enable the camera for this app in system settings');
+              }}
+            >
+              Open settings
+            </Button>
+            <Button className="flex-1" onClick={() => setPhase('form')}>
+              Type it instead
+            </Button>
+          </div>
+        </div>
       )}
 
       {phase === 'error' && (

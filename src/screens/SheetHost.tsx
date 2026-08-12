@@ -11,6 +11,7 @@ const Scanner = lazy(() => import('./Scanner'));
 const LabelScanner = lazy(() => import('./LabelScanner'));
 const QuickLog = lazy(() => import('./QuickLog'));
 const Goals = lazy(() => import('./Goals'));
+const Water = lazy(() => import('./Water'));
 
 /**
  * Single mount point for every modal in the app.
@@ -36,6 +37,7 @@ export default function SheetHost() {
       {sheet.kind === 'label-scanner' && <LabelScanner mealId={sheet.mealId} day={sheet.day} />}
       {sheet.kind === 'nutrient-detail' && <NutrientDetail day={sheet.day} />}
       {sheet.kind === 'log-weight' && <LogWeight />}
+      {sheet.kind === 'water' && <Water day={sheet.day} />}
       {sheet.kind === 'create-food' && (
         <CreateFood barcode={sheet.barcode} mealId={sheet.mealId} day={sheet.day} />
       )}

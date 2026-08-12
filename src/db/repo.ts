@@ -464,6 +464,24 @@ export async function waterForDay(day: DayKey): Promise<number> {
   return rows.filter((w) => !w.deleted).reduce((sum, w) => sum + w.ml, 0);
 }
 
+/** Individual drinks for a day, newest first, so they can be reviewed and removed. */
+export async function waterEntriesForDay(day: DayKey): Promise<WaterLog[]> {
+  const rows = await db.water.where('day').equals(day).toArray();
+  return rows.filter((w) => !w.deleted).sort((a, b) => b.loggedAt - a.loggedAt);
+}
+
+export async function deleteWater(id: string): Promise<void> {
+  const entry = await db.water.get(id);
+  if (!entry) return;
+  await db.water.put({ ...entry, deleted: true, updatedAt: now() });
+}
+
+export async function updateWater(id: string, ml: number): Promise<void> {
+  const entry = await db.water.get(id);
+  if (!entry) return;
+  await db.water.put({ ...entry, ml, updatedAt: now() });
+}
+
 export async function logExercise(entry: Omit<ExerciseLog, 'id' | 'loggedAt' | 'updatedAt'>): Promise<void> {
   const ts = now();
   await db.exercise.add({ ...entry, id: newId(), loggedAt: ts, updatedAt: ts });

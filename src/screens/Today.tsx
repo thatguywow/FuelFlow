@@ -13,6 +13,7 @@ import { EnergyRing, type MacroBarDatum } from '../ui/charts';
 import { tapFeedback, useAnimatedNumber, useStagger } from '../ui/motion';
 import { useSwipe } from '../ui/gestures';
 import { formatCount } from '../core/format';
+import { formatVolume } from '../core/units';
 import {
   IconCheck,
   IconChevronLeft,
@@ -122,6 +123,12 @@ export default function Today() {
           <Stat label={exerciseBonus > 0 ? 'Exercise' : 'Burned'} value={Math.round(dayData.exerciseKcal)} />
         </div>
 
+        <WaterRow
+          day={day}
+          ml={dayData.waterMl}
+          targetMl={derived.nutrientTargets.get(N.WATER)?.target ?? 3000}
+        />
+
         <button
           onClick={() => openSheet({ kind: 'nutrient-detail', day })}
           className="rounded-full border border-border bg-surface-2 px-4 py-2 text-[13px] font-medium text-brand transition-colors hover:border-brand/40 hover:bg-brand-soft"
@@ -153,12 +160,6 @@ export default function Today() {
           ))}
         </div>
       )}
-
-      <WaterStrip
-        day={day}
-        ml={dayData.waterMl}
-        targetMl={derived.nutrientTargets.get(N.WATER)?.target ?? 3000}
-      />
 
       {/* ---------- Meals ---------- */}
       {/* Adding food now lives entirely behind the central button, so the diary
@@ -360,44 +361,57 @@ function EntryRow({
 }
 
 /**
- * Slim water strip. Logging water moved into the add menu, but the running
- * total is still worth seeing at a glance, and a one-tap top-up next to it
- * saves a trip through the menu for the most repeated action of the day.
+ * Water row, docked inside the summary card rather than floating between the
+ * card and the diary where it read as an orphan.
+ *
+ * The whole row opens the water sheet — where drinks can be reviewed and
+ * removed — while the trailing button adds a glass without leaving the screen.
+ * Amounts under a litre are shown in millilitres: rendering 250 ml as "0.3 L"
+ * looked like the app had rounded the glass up.
  */
-function WaterStrip({ day, ml, targetMl }: { day: DayKey; ml: number; targetMl: number }) {
+function WaterRow({ day, ml, targetMl }: { day: DayKey; ml: number; targetMl: number }) {
+  const openSheet = useUi((s) => s.openSheet);
   const toast = useUi((s) => s.toast);
   const shown = useAnimatedNumber(ml, { duration: 500 });
   const ratio = targetMl > 0 ? Math.min(1, ml / targetMl) : 0;
   const width = useAnimatedNumber(ratio * 100, { duration: 600, epsilon: 0.2 });
 
   return (
-    <button
-      onClick={async () => {
-        await addWater(day, 250);
-        void tapFeedback();
-        toast('250 ml logged');
-      }}
-      className="panel mt-3 flex w-full items-center gap-3 px-4 py-3 text-left transition-[border-color,transform] duration-150 hover:border-border-strong active:scale-[0.99]"
-    >
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand">
-        <IconDroplet size={16} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-baseline justify-between">
-          <span className="text-[13.5px] font-medium">Water</span>
-          <span className="text-[12.5px] text-faint tnum">
-            {(shown / 1000).toFixed(1)} / {(targetMl / 1000).toFixed(1)} L
+    <div className="flex w-full items-center gap-3 border-t border-border pt-4">
+      <button
+        onClick={() => openSheet({ kind: 'water', day })}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+      >
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand">
+          <IconDroplet size={16} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-baseline justify-between">
+            <span className="text-[13px] font-medium">Water</span>
+            <span className="text-[12px] text-faint tnum">
+              {formatVolume(shown)} / {formatVolume(targetMl)}
+            </span>
+          </span>
+          <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-surface-2">
+            <span
+              className="block h-full rounded-full"
+              style={{ width: `${width}%`, background: 'var(--color-brand)' }}
+            />
           </span>
         </span>
-        <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-surface-2">
-          <span
-            className="block h-full rounded-full"
-            style={{ width: `${width}%`, background: 'var(--color-brand)' }}
-          />
-        </span>
-      </span>
-      <IconPlus size={16} className="shrink-0 text-faint" />
-    </button>
+      </button>
+      <button
+        onClick={async () => {
+          await addWater(day, 250);
+          void tapFeedback();
+          toast('250 ml logged');
+        }}
+        aria-label="Add 250 ml of water"
+        className="grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-surface-2 text-dim transition-colors hover:border-brand/40 hover:text-brand active:scale-90"
+      >
+        <IconPlus size={15} />
+      </button>
+    </div>
   );
 }
 

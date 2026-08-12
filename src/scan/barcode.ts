@@ -18,6 +18,89 @@ export type ScanSource = 'native' | 'detector' | 'zxing';
 
 export interface ScannerHandle {
   stop: () => void;
+  /** Toggle the torch. Resolves to the state actually achieved. */
+  setTorch: (on: boolean) => Promise<boolean>;
+  /** Whether this device/stream exposes a torch at all. */
+  hasTorch: () => boolean;
+}
+
+export type PermissionState = 'granted' | 'denied' | 'prompt' | 'unavailable';
+
+/**
+ * Camera permission, asked for explicitly.
+ *
+ * The scanners previously just called `getUserMedia` and let it fail, which on
+ * a permanently denied permission produces a bare error and no way forward —
+ * the user cannot re-prompt, because the browser and the OS both remember the
+ * refusal. Checking first lets the UI explain the situation and offer the only
+ * thing that actually works: opening system settings.
+ */
+export async function cameraPermission(): Promise<PermissionState> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { BarcodeScanner } = await import('@capacitor-mlkit/barcode-scanning');
+      const status = await BarcodeScanner.checkPermissions();
+      if (status.camera === 'granted' || status.camera === 'limited') return 'granted';
+      if (status.camera === 'denied') return 'denied';
+      return 'prompt';
+    } catch {
+      return 'unavailable';
+    }
+  }
+
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return 'unavailable';
+  // The Permissions API knows the answer without lighting up the camera, but
+  // Safari does not implement the "camera" name, so an unknown result simply
+  // means "we will find out when we ask".
+  try {
+    const status = await navigator.permissions?.query({ name: 'camera' as PermissionName });
+    if (status?.state === 'granted') return 'granted';
+    if (status?.state === 'denied') return 'denied';
+  } catch {
+    /* Not supported here; fall through to prompting. */
+  }
+  return 'prompt';
+}
+
+/** Ask for camera access. Returns the resulting state. */
+export async function requestCameraPermission(): Promise<PermissionState> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { BarcodeScanner } = await import('@capacitor-mlkit/barcode-scanning');
+      const status = await BarcodeScanner.requestPermissions();
+      return status.camera === 'granted' || status.camera === 'limited' ? 'granted' : 'denied';
+    } catch {
+      return 'unavailable';
+    }
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    // Release it immediately: this call exists to trigger the prompt, and the
+    // scanner opens its own stream with the constraints it actually wants.
+    stream.getTracks().forEach((track) => track.stop());
+    return 'granted';
+  } catch (error) {
+    return error instanceof DOMException && error.name === 'NotAllowedError' ? 'denied' : 'unavailable';
+  }
+}
+
+/**
+ * Open the OS settings page for this app, the only route back once a
+ * permission has been permanently denied.
+ */
+export async function openAppSettings(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const { NativeSettings, AndroidSettings, IOSSettings } = await import('capacitor-native-settings');
+    await NativeSettings.open({
+      optionAndroid: AndroidSettings.ApplicationDetails,
+      optionIOS: IOSSettings.App,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 interface BarcodeDetectorLike {
@@ -83,6 +166,31 @@ export async function scanFromVideo(
     video.srcObject = null;
   };
 
+  /**
+   * Torch lives on the video track, not on the camera as a whole, and is an
+   * optional constraint — plenty of devices and every desktop webcam simply do
+   * not have one, so support is probed rather than assumed.
+   */
+  const track = () => stream?.getVideoTracks()[0] ?? null;
+  const hasTorch = () => {
+    const capabilities = track()?.getCapabilities?.() as { torch?: boolean } | undefined;
+    return capabilities?.torch === true;
+  };
+  const setTorch = async (on: boolean) => {
+    const videoTrack = track();
+    if (!videoTrack || !hasTorch()) return false;
+    try {
+      // `torch` is a real constraint on Android/Chrome but is absent from the
+      // DOM typings, so the cast goes via unknown rather than pretending it is
+      // a known member.
+      await videoTrack.applyConstraints({ advanced: [{ torch: on }] } as unknown as MediaTrackConstraints);
+      return on;
+    } catch {
+      return false;
+    }
+  };
+  const idle: ScannerHandle = { stop, setTorch: async () => false, hasTorch: () => false };
+
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -90,13 +198,13 @@ export async function scanFromVideo(
     });
     if (stopped) {
       stream.getTracks().forEach((t) => t.stop());
-      return { stop };
+      return idle;
     }
     video.srcObject = stream;
     await video.play();
   } catch (error) {
     onError?.(error instanceof Error ? error : new Error('Camera unavailable'));
-    return { stop };
+    return idle;
   }
 
   if (window.BarcodeDetector) {
@@ -116,7 +224,7 @@ export async function scanFromVideo(
       requestAnimationFrame(() => void tick());
     };
     void tick();
-    return { stop };
+    return { stop, setTorch, hasTorch };
   }
 
   // ZXing is imported here rather than at module scope so the WebAssembly
@@ -134,10 +242,12 @@ export async function scanFromVideo(
         controls.stop();
         stop();
       },
+      setTorch,
+      hasTorch,
     };
   } catch (error) {
     onError?.(error instanceof Error ? error : new Error('Barcode decoding unavailable'));
-    return { stop };
+    return idle;
   }
 }
 
@@ -153,11 +263,31 @@ export async function recognizeLabelText(): Promise<string[] | null> {
   const { Camera } = await import('@capacitor/camera').catch(() => ({ Camera: null }) as never);
   if (!Camera) return null;
 
+  // Ask before opening the camera so a refusal surfaces as a state the UI can
+  // explain, rather than as an opaque failure from getPhoto.
+  const status = await Camera.checkPermissions().catch(() => null);
+  if (status && status.camera !== 'granted' && status.camera !== 'limited') {
+    const requested = await Camera.requestPermissions({ permissions: ['camera'] }).catch(() => null);
+    if (!requested || (requested.camera !== 'granted' && requested.camera !== 'limited')) {
+      throw new CameraDeniedError();
+    }
+  }
+
+  // The system camera is used here rather than an in-app preview, so its own
+  // flash control is available and no torch handling is needed.
   const photo = await Camera.getPhoto({ quality: 85, resultType: 'uri' as never, source: 'CAMERA' as never });
   if (!photo?.path) return null;
 
   const { blocks } = await TextRecognition.processImage({ path: photo.path });
   return blocks.map((block) => block.text);
+}
+
+/** Thrown when the camera is refused, so callers can offer a settings link. */
+export class CameraDeniedError extends Error {
+  constructor() {
+    super('Camera access was refused.');
+    this.name = 'CameraDeniedError';
+  }
 }
 
 // ---------------------------------------------------------------------------

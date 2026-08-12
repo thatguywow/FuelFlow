@@ -42,6 +42,25 @@ export interface RemoteDbManifest {
 const DEFAULT_DB_URL =
   import.meta.env.VITE_FOOD_DB_URL ?? `${import.meta.env.BASE_URL}fooddb/`;
 
+/**
+ * Resolve a path against the database location, handling both forms it takes.
+ *
+ * On the web this is a site-relative path like `/FuelFlow/fooddb/`; in the
+ * native app it is an absolute `https://…` URL, because the database is far too
+ * large to ship inside the APK and has to be read from the Pages deployment.
+ * Blindly prefixing `location.origin` produces `capacitor://localhosthttps://…`
+ * for the absolute case — an invalid URL that throws inside worker startup,
+ * where the failure was being swallowed. `new URL(…, base)` already ignores the
+ * base when the input is absolute, so the only care needed is not to build a
+ * nonsense base in the first place.
+ */
+function absoluteDbUrl(pathOrUrl: string): string {
+  const base = /^https?:\/\//i.test(DEFAULT_DB_URL)
+    ? DEFAULT_DB_URL
+    : new URL(DEFAULT_DB_URL, location.origin).toString();
+  return new URL(pathOrUrl, base).toString();
+}
+
 let workerPromise: Promise<WorkerHttpvfs | null> | null = null;
 let manifest: RemoteDbManifest | null = null;
 let unavailableUntil = 0;
@@ -56,6 +75,16 @@ function markUnavailable(minutes = 10): null {
   return null;
 }
 
+/**
+ * A query failure used to be swallowed entirely, which turned a broken SQL
+ * statement into "the branded tier just never returns anything" — invisible in
+ * the UI and invisible in the console. Degrading quietly is right; degrading
+ * silently is not.
+ */
+function reportQueryFailure(what: string, error: unknown): void {
+  console.warn(`[fuelflow] hosted database ${what} failed:`, error);
+}
+
 async function getWorker(): Promise<WorkerHttpvfs | null> {
   if (Date.now() < unavailableUntil) return null;
   if (workerPromise) return workerPromise;
@@ -64,7 +93,7 @@ async function getWorker(): Promise<WorkerHttpvfs | null> {
     try {
       // The manifest is checked before anything heavy loads, so a deployment
       // with no branded snapshot never pays for the SQLite runtime at all.
-      const manifestResponse = await fetch(`${DEFAULT_DB_URL}manifest.json`, { cache: 'no-cache' });
+      const manifestResponse = await fetch(absoluteDbUrl('manifest.json'), { cache: 'no-cache' });
       if (!manifestResponse.ok) return markUnavailable();
       manifest = (await manifestResponse.json()) as RemoteDbManifest;
 
@@ -75,17 +104,13 @@ async function getWorker(): Promise<WorkerHttpvfs | null> {
       const { createDbWorker } = await import('sql.js-httpvfs');
 
       const worker = await createDbWorker(
-        [
-          {
-            from: 'jsonconfig',
-            configUrl: new URL(manifest.config, `${location.origin}${DEFAULT_DB_URL}`).toString(),
-          },
-        ],
+        [{ from: 'jsonconfig', configUrl: absoluteDbUrl(manifest.config) }],
         new URL('sql.js-httpvfs/dist/sqlite.worker.js', import.meta.url).toString(),
         new URL('sql.js-httpvfs/dist/sql-wasm.wasm', import.meta.url).toString(),
       );
       return worker;
-    } catch {
+    } catch (error) {
+      reportQueryFailure('worker startup', error);
       return markUnavailable();
     }
   })();
@@ -231,7 +256,8 @@ export async function lookupBarcode(barcode: string): Promise<Food | null> {
     )) as unknown as ProductRow[];
     const row = rows[0];
     return row ? rowToFood(row) : null;
-  } catch {
+  } catch (error) {
+    reportQueryFailure('barcode lookup', error);
     return markUnavailable(5);
   }
 }
@@ -278,7 +304,8 @@ export async function searchRemote(query: string, limit = 25): Promise<SearchHit
       });
     }
     return hits;
-  } catch {
+  } catch (error) {
+    reportQueryFailure('search', error);
     markUnavailable(5);
     return [];
   }

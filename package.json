@@ -32,6 +32,7 @@
     "@capacitor/share": "^8.0.1",
     "@capacitor/status-bar": "^8.0.3",
     "@zxing/browser": "^0.2.1",
+    "capacitor-native-settings": "^8.2.0",
     "dexie": "^4.0.11",
     "dexie-react-hooks": "^1.1.7",
     "react": "^19.0.0",
