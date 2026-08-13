@@ -12,7 +12,7 @@ import {
   type ScannerHandle,
 } from '../scan/barcode';
 import { Button, Card, EmptyState, Input, Sheet, cx } from '../ui/primitives';
-import { IconBarcode, IconCheck, IconClose, IconFlash, IconSparkle } from '../ui/icons';
+import { IconScan, IconCheck, IconClose, IconFlash, IconSparkle } from '../ui/icons';
 
 type Phase = 'checking' | 'needs-permission' | 'denied' | 'scanning' | 'looking-up' | 'error';
 
@@ -267,7 +267,7 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
         {phase === 'denied' && (
           <>
             <EmptyState
-              icon={<IconBarcode size={26} />}
+              icon={<IconScan size={26} />}
               title="Camera access is turned off"
               detail="Scanning needs the camera. Neither the app nor the browser can ask again once it has been refused — it has to be re-enabled in settings."
             />
@@ -294,7 +294,7 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
         {phase === 'needs-permission' && (
           <>
             <EmptyState
-              icon={<IconBarcode size={26} />}
+              icon={<IconScan size={26} />}
               title="Allow the camera?"
               detail="Used only to read barcodes. Frames are decoded on this device and no image is stored or sent anywhere."
             />
@@ -306,7 +306,7 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
 
         {phase === 'error' && (
           <>
-            <EmptyState icon={<IconBarcode size={26} />} title="Cannot use the camera" detail={error} />
+            <EmptyState icon={<IconScan size={26} />} title="Cannot use the camera" detail={error} />
             <Button full onClick={() => setShowManual(true)}>
               Type the barcode instead
             </Button>
@@ -318,7 +318,7 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
         )}
 
         {phase === 'checking' && scanSource() === 'native' && (
-          <EmptyState icon={<IconBarcode size={26} />} title="Opening the camera…" />
+          <EmptyState icon={<IconScan size={26} />} title="Opening the camera…" />
         )}
 
         {showManual && (

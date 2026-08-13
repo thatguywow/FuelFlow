@@ -48,12 +48,19 @@ export default function App() {
       </main>
 
       {/* Content scrolling under a translucent bar stays legible through it and
-          reads as a rendering fault. This fades it out just above the nav so it
-          dissolves into the chrome instead of being sliced by it. */}
+          reads as a rendering fault.
+
+          The solid stop has to clear the bar's full height, not just part of
+          it: the tab bar is 4rem tall, so a fade that went solid at 34px left
+          its top half sitting over a still-transparent ramp, and the diary
+          showed through the bar's own 72% tint. Solid to the top of the bar,
+          then a soft ramp above it so content dissolves rather than being
+          sliced. */}
       <div
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 mx-auto h-24 max-w-2xl"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 mx-auto h-36 max-w-2xl"
         style={{
-          background: 'linear-gradient(to top, var(--color-bg) 35%, transparent)',
+          background:
+            'linear-gradient(to top, var(--color-bg) calc(4rem + env(safe-area-inset-bottom, 0px)), transparent 9rem)',
         }}
         aria-hidden="true"
       />

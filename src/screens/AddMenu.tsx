@@ -3,7 +3,7 @@ import { useUi } from '../state/ui';
 import { useTargets } from '../state/useTargets';
 import { cx } from '../ui/primitives';
 import { tapFeedback } from '../ui/motion';
-import { IconBarcode, IconBook, IconPlus, IconSearch, IconSparkle } from '../ui/icons';
+import { IconLabel, IconPlus, IconScan, IconSearch, IconSparkle } from '../ui/icons';
 
 /**
  * The central add button and its menu.
@@ -70,14 +70,14 @@ export default function AddMenu() {
       id: 'barcode',
       label: 'Scan barcode',
       detail: 'Packaged products',
-      icon: <IconBarcode size={19} />,
+      icon: <IconScan size={19} />,
       run: () => openSheet({ kind: 'scanner', mealId, day }),
     },
     {
       id: 'label',
       label: 'Scan label',
       detail: 'Read a nutrition panel',
-      icon: <IconBook size={19} />,
+      icon: <IconLabel size={19} />,
       run: () => openSheet({ kind: 'label-scanner', mealId, day }),
     },
     {

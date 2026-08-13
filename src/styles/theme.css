@@ -347,7 +347,13 @@
  * bundler emit whatever prefixes its targets actually need.
  */
 @utility glass {
-  background: color-mix(in oklab, var(--color-bg-elevated) 72%, transparent);
+  /* 88%, not 72%. The blur is what makes a translucent bar read as frosted
+     rather than as a rendering fault, and it is exactly the thing that does not
+     composite on an older WebView, in a downscaled preview, or with GPU
+     compositing off. At this opacity the bar still picks up a hint of what is
+     behind it where the blur works, and stays legible chrome where it does
+     not. */
+  background: color-mix(in oklab, var(--color-bg-elevated) 88%, transparent);
   @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     backdrop-filter: saturate(180%) blur(24px);
   }

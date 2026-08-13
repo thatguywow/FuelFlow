@@ -18,7 +18,7 @@ import { formatCount } from '../core/format';
 import type { DayKey } from '../core/dates';
 import { Button, Card, EmptyState, Field, Input, Sheet, Toggle, cx } from '../ui/primitives';
 import { MealPicker } from './Sheets';
-import { IconBook, IconCheck, IconClose, IconFlash } from '../ui/icons';
+import { IconLabel, IconCheck, IconClose, IconFlash } from '../ui/icons';
 
 type Basis = '100g' | 'serving';
 
@@ -368,13 +368,13 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
       }
     >
       {phase === 'reading' && (
-        <EmptyState icon={<IconBook size={26} />} title="Reading the label…" detail="Recognition runs on your device. Nothing is uploaded." />
+        <EmptyState icon={<IconLabel size={26} />} title="Reading the label…" detail="Recognition runs on your device. Nothing is uploaded." />
       )}
 
       {phase === 'denied' && (
         <div className="p-4">
           <EmptyState
-            icon={<IconBook size={26} />}
+            icon={<IconLabel size={26} />}
             title="Camera access is turned off"
             detail="Reading a label needs the camera. It cannot be requested again once refused, so it has to be re-enabled in settings."
           />
@@ -398,7 +398,7 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
 
       {phase === 'error' && Boolean(error) && (
         <div className="p-4">
-          <EmptyState icon={<IconBook size={26} />} title="Could not read that" detail={error} />
+          <EmptyState icon={<IconLabel size={26} />} title="Could not read that" detail={error} />
           <div className="flex gap-2">
             <Button className="flex-1" onClick={() => setPhase('camera')}>Try again</Button>
             <Button variant="primary" className="flex-1" onClick={() => setPhase('form')}>Type it instead</Button>

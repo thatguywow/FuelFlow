@@ -79,6 +79,29 @@ export const IconBarcode = (p: IconProps) => (
   </Svg>
 );
 
+/**
+ * Scanning, as the act rather than the object.
+ *
+ * `IconBarcode` draws the bars themselves, which is right for a field labelled
+ * with a barcode number but wrong for the action: four corner brackets and a
+ * reading line say "point the camera at this" and match the viewfinder the
+ * scanner actually puts on screen.
+ */
+export const IconScan = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 8.5V6a2 2 0 0 1 2-2h2.5M15.5 4H18a2 2 0 0 1 2 2v2.5M20 15.5V18a2 2 0 0 1-2 2h-2.5M8.5 20H6a2 2 0 0 1-2-2v-2.5" />
+    <path d="M4 12h16" />
+  </Svg>
+);
+
+/** A nutrition panel: the ruled table, not a book. */
+export const IconLabel = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="5" y="3.5" width="14" height="17" rx="2.4" />
+    <path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4" />
+  </Svg>
+);
+
 export const IconChevronLeft = (p: IconProps) => (
   <Svg {...p}>
     <path d="m14.5 6-6 6 6 6" />
