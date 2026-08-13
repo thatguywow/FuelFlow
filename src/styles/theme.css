@@ -315,6 +315,15 @@
 @utility safe-b {
   padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--space-safe-b));
 }
+/*
+ * For chrome anchored to the display edge — the tab bar. It is *meant* to meet
+ * the bottom, and only a real inset should lift it. Given the content floor it
+ * grew a dead band under its labels, and because the bar is translucent the
+ * content scrolling beneath showed through that band as stray arcs.
+ */
+@utility safe-b-edge {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
 @utility safe-x {
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
@@ -476,6 +485,24 @@
   }
 }
 
+/* Sweeps the scanner's reading line down the framing window and back. The
+   movement is what tells you the camera is live — a static line looks frozen,
+   and people assume the scanner has hung. */
+@keyframes ff-scan-sweep {
+  0% {
+    transform: translateY(-46%);
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(46%);
+    opacity: 0;
+  }
+}
+
 @utility animate-sheet-in {
   animation: ff-sheet-in 0.34s var(--ease-out-quint) both;
 }
@@ -484,6 +511,9 @@
 }
 @utility animate-pop-in {
   animation: ff-pop-in 0.3s var(--ease-spring) both;
+}
+@utility animate-scan-sweep {
+  animation: ff-scan-sweep 2.4s var(--ease-out-quint) infinite alternate;
 }
 @utility animate-pulse-glow {
   animation: ff-pulse-glow 2.4s ease-in-out infinite;

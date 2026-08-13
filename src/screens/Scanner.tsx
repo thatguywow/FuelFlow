@@ -12,7 +12,7 @@ import {
   type ScannerHandle,
 } from '../scan/barcode';
 import { Button, Card, EmptyState, Input, Sheet, cx } from '../ui/primitives';
-import { IconBarcode, IconCheck, IconFlash, IconSparkle } from '../ui/icons';
+import { IconBarcode, IconCheck, IconClose, IconFlash, IconSparkle } from '../ui/icons';
 
 type Phase = 'checking' | 'needs-permission' | 'denied' | 'scanning' | 'looking-up' | 'error';
 
@@ -136,12 +136,112 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
     }
   };
 
+  // The full-screen viewfinder is not a Sheet, so it does not inherit the
+  // sheet's dismissal. Without this, Escape — and the Android back button the
+  // WebView maps onto it — leave the camera covering the whole app with only
+  // the close button as a way out.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeSheet();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [closeSheet]);
+
   const toggleTorch = async () => {
     const next = !torchOn;
     const achieved = await handleRef.current?.setTorch(next);
     setTorchOn(achieved ?? false);
     if (next && achieved === false) toast('This camera has no flash');
   };
+
+  // The camera phases take the whole display. A viewfinder boxed inside a sheet
+  // reads as a preview thumbnail — people hold the packet too far back and the
+  // decode never fires. Every scanner worth copying is edge to edge, with the
+  // controls floating over the feed.
+  const live = (phase === 'checking' || phase === 'scanning') && scanSource() !== 'native';
+  if (live && !showManual) {
+    return (
+      <div className="fixed inset-0 z-50 animate-fade-in bg-black">
+        <video
+          ref={videoRef}
+          className="absolute inset-0 size-full object-cover"
+          playsInline
+          muted
+          autoPlay
+        />
+
+        {/* Scrim with a genuinely transparent cut-out, built from a huge spread
+            box-shadow rather than four overlay panels. */}
+        <div className="pointer-events-none absolute inset-0">
+          <div
+            className="absolute left-1/2 top-[42%] h-44 w-[78%] -translate-x-1/2 -translate-y-1/2 rounded-3xl"
+            style={{ boxShadow: '0 0 0 9999px rgb(0 0 0 / 0.62)' }}
+          />
+          <div className="absolute left-1/2 top-[42%] h-44 w-[78%] -translate-x-1/2 -translate-y-1/2">
+            {/* Corner brackets rather than a full outline: they frame the code
+                without covering the bars at its edges. */}
+            {[
+              'left-0 top-0 border-l-[3px] border-t-[3px] rounded-tl-2xl',
+              'right-0 top-0 border-r-[3px] border-t-[3px] rounded-tr-2xl',
+              'left-0 bottom-0 border-l-[3px] border-b-[3px] rounded-bl-2xl',
+              'right-0 bottom-0 border-r-[3px] border-b-[3px] rounded-br-2xl',
+            ].map((corner) => (
+              <span key={corner} className={cx('absolute size-9 border-white', corner)} />
+            ))}
+            <span className="animate-scan-sweep absolute inset-x-5 top-1/2 h-0.5 rounded-full bg-brand shadow-[0_0_12px_2px_var(--ff-brand-glow)]" />
+          </div>
+        </div>
+
+        {/* Controls float over the feed, clear of the notch. */}
+        <div className="safe-t absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-3">
+          <button
+            onClick={closeSheet}
+            aria-label="Close scanner"
+            className="grid size-11 place-items-center rounded-full bg-black/45 text-white backdrop-blur transition-transform active:scale-90"
+          >
+            <IconClose size={20} />
+          </button>
+          <p className="text-[15px] font-semibold text-white">Scan barcode</p>
+          {torchAvailable ? (
+            <button
+              onClick={() => void toggleTorch()}
+              aria-pressed={torchOn}
+              aria-label="Toggle flash"
+              className={cx(
+                'grid size-11 place-items-center rounded-full backdrop-blur transition-colors active:scale-90',
+                torchOn ? 'bg-white text-black' : 'bg-black/45 text-white',
+              )}
+            >
+              <IconFlash size={20} off={!torchOn} />
+            </button>
+          ) : (
+            <span className="size-11" />
+          )}
+        </div>
+
+        <p className="absolute inset-x-0 top-[42%] mt-28 text-center text-[14px] font-medium text-white/90">
+          {phase === 'checking' ? 'Starting the camera…' : 'Hold the barcode inside the frame'}
+        </p>
+        <p className="absolute inset-x-0 top-[42%] mt-36 px-10 text-center text-[12.5px] leading-relaxed text-white/55">
+          Decoding happens on this device. No image is stored or sent anywhere.
+        </p>
+
+        <div className="safe-b absolute inset-x-0 bottom-0 flex gap-2 bg-gradient-to-t from-black/85 to-transparent px-4 pb-4 pt-10">
+          <Button className="flex-1" onClick={() => setShowManual(true)}>
+            Type the barcode
+          </Button>
+          <Button
+            variant="secondary"
+            className="flex-1"
+            onClick={() => openSheet({ kind: 'create-food', mealId, day })}
+          >
+            New food
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Sheet
@@ -151,7 +251,7 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
       footer={
         <div className="flex gap-2">
           <Button className="flex-1" onClick={() => setShowManual((v) => !v)}>
-            {showManual ? 'Hide keypad' : 'Type the barcode'}
+            {showManual ? 'Back to camera' : 'Type the barcode'}
           </Button>
           <Button
             variant="secondary"
@@ -215,58 +315,6 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
 
         {phase === 'looking-up' && (
           <EmptyState icon={<IconSparkle size={26} />} title="Looking it up…" />
-        )}
-
-        {(phase === 'checking' || phase === 'scanning') && scanSource() !== 'native' && (
-          <>
-            {/* A tall viewfinder with the surroundings dimmed and only the
-                framing window left clear. A small boxed preview makes people
-                hold the phone too far back; filling the space is what tells
-                them to bring the packet close. */}
-            <div className="relative aspect-[3/4] overflow-hidden rounded-(--radius-card) bg-black">
-              <video ref={videoRef} className="size-full object-cover" playsInline muted autoPlay />
-
-              {/* Scrim with a cut-out window, built from a box-shadow so the
-                  hole is genuinely transparent rather than a lighter overlay. */}
-              <div className="pointer-events-none absolute inset-0">
-                <div
-                  className="absolute left-1/2 top-1/2 h-32 w-[82%] -translate-x-1/2 -translate-y-1/2 rounded-2xl"
-                  style={{ boxShadow: '0 0 0 9999px rgb(0 0 0 / 0.55)' }}
-                />
-                <div className="absolute left-1/2 top-1/2 h-32 w-[82%] -translate-x-1/2 -translate-y-1/2">
-                  {/* Corner brackets rather than a full outline: they frame
-                      without hiding the edges of the barcode itself. */}
-                  {[
-                    'left-0 top-0 border-l-2 border-t-2 rounded-tl-xl',
-                    'right-0 top-0 border-r-2 border-t-2 rounded-tr-xl',
-                    'left-0 bottom-0 border-l-2 border-b-2 rounded-bl-xl',
-                    'right-0 bottom-0 border-r-2 border-b-2 rounded-br-xl',
-                  ].map((corner) => (
-                    <span key={corner} className={cx('absolute size-7 border-white/90', corner)} />
-                  ))}
-                  <span className="absolute inset-x-4 top-1/2 h-px -translate-y-1/2 bg-brand/70 shadow-[0_0_10px_1px_var(--ff-brand-glow)]" />
-                </div>
-              </div>
-
-              {torchAvailable && (
-                <button
-                  onClick={() => void toggleTorch()}
-                  aria-pressed={torchOn}
-                  aria-label="Toggle flash"
-                  className={cx(
-                    'absolute right-3 top-3 grid size-11 place-items-center rounded-full backdrop-blur transition-colors',
-                    torchOn ? 'bg-white text-black' : 'bg-black/45 text-white',
-                  )}
-                >
-                  <IconFlash size={20} off={!torchOn} />
-                </button>
-              )}
-
-              <p className="absolute inset-x-0 bottom-4 text-center text-[13px] font-medium text-white/85">
-                {phase === 'checking' ? 'Starting the camera…' : 'Hold the barcode inside the frame'}
-              </p>
-            </div>
-          </>
         )}
 
         {phase === 'checking' && scanSource() === 'native' && (

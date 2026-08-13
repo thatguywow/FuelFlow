@@ -307,7 +307,6 @@ export interface ParsedLabel {
 }
 
 const LABEL_PATTERNS: { key: keyof ParsedLabel; pattern: RegExp; scale?: number }[] = [
-  { key: 'kcal', pattern: /(?:energy|calories|kcal)\D{0,20}?(\d+(?:[.,]\d+)?)\s*(?:kcal)?/i },
   { key: 'protein', pattern: /protein\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i },
   { key: 'carbs', pattern: /carbohydrate\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i },
   { key: 'sugar', pattern: /(?:of which )?sugars?\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i },
@@ -315,8 +314,40 @@ const LABEL_PATTERNS: { key: keyof ParsedLabel; pattern: RegExp; scale?: number 
   { key: 'satFat', pattern: /satur\w*\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i },
   { key: 'fiber', pattern: /fib(?:re|er)\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i },
   { key: 'sodiumMg', pattern: /sodium\D{0,20}?(\d+(?:[.,]\d+)?)\s*mg/i },
-  { key: 'servingG', pattern: /serving size\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i },
+  // `[^\n]` rather than `\D`: US panels write "Serving size 2/3 cup (55g)", and
+  // a non-digit class cannot step over the "2/3" to reach the grams.
+  { key: 'servingG', pattern: /serving size[^\n]{0,40}?(\d+(?:[.,]\d+)?)\s*g\b/i },
 ];
+
+const toNumber = (raw: string) => Number(raw.replace(',', '.'));
+
+/**
+ * Energy, read in order of how unambiguous each form is.
+ *
+ * European labels print both units on one line — "Energy 2255 kJ / 539 kcal" —
+ * so a pattern anchored on the *word* "energy" takes whichever number comes
+ * first and records the kilojoules as calories, overstating by 4.2x. Anchoring
+ * on the unit instead means each number is read as what it is labelled.
+ */
+function readEnergyKcal(text: string): number | undefined {
+  // "539 kcal" — unit after its own number.
+  const kcalAfter = /(\d+(?:[.,]\d+)?)\s*kcal\b/i.exec(text);
+  if (kcalAfter?.[1]) return toNumber(kcalAfter[1]);
+
+  // "kcal 539" — some tables put the unit in a header column.
+  const kcalBefore = /kcal\D{0,10}?(\d+(?:[.,]\d+)?)/i.exec(text);
+  if (kcalBefore?.[1]) return toNumber(kcalBefore[1]);
+
+  // US panels give a bare number: "Calories 230".
+  const calories = /calories\D{0,20}?(\d+(?:[.,]\d+)?)/i.exec(text);
+  if (calories?.[1]) return toNumber(calories[1]);
+
+  // Kilojoule-only labels, converted last.
+  const kj = /(\d+(?:[.,]\d+)?)\s*kj\b/i.exec(text);
+  if (kj?.[1]) return toNumber(kj[1]) / 4.184;
+
+  return undefined;
+}
 
 /**
  * Pull nutrition figures out of recognised label text. Deliberately
@@ -330,20 +361,18 @@ export function parseNutritionLabel(lines: string[]): ParsedLabel {
   for (const { key, pattern, scale = 1 } of LABEL_PATTERNS) {
     const match = pattern.exec(text);
     if (!match?.[1]) continue;
-    const value = Number(match[1].replace(',', '.'));
+    const value = toNumber(match[1]);
     if (Number.isFinite(value)) out[key] = value * scale;
   }
+
+  const kcal = readEnergyKcal(text);
+  if (kcal !== undefined && Number.isFinite(kcal)) out.kcal = kcal;
 
   // Salt is the European convention; convert to the sodium FuelFlow stores.
   if (out.sodiumMg === undefined) {
     const salt = /salt\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i.exec(text);
-    if (salt?.[1]) out.sodiumMg = Number(salt[1].replace(',', '.')) * 400;
+    if (salt?.[1]) out.sodiumMg = toNumber(salt[1]) * 400;
   }
 
-  // Labels outside the US often give kilojoules only.
-  if (out.kcal === undefined) {
-    const kj = /(\d+(?:[.,]\d+)?)\s*kj/i.exec(text);
-    if (kj?.[1]) out.kcal = Number(kj[1].replace(',', '.')) / 4.184;
-  }
   return out;
 }

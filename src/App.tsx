@@ -62,7 +62,7 @@ export default function App() {
           stays visible and can be tapped again to dismiss — a menu you cannot
           see the way out of is worse than no menu — but below sheets, which
           cover everything. */}
-      <nav className="glass safe-b fixed inset-x-0 bottom-0 z-[42] mx-auto flex max-w-2xl border-t border-border">
+      <nav className="glass safe-b-edge fixed inset-x-0 bottom-0 z-[42] mx-auto flex max-w-2xl border-t border-border">
         {TABS.map(({ id, label, icon: Icon }, index) => {
           const active = tab === id;
           // The add button occupies the middle slot, so the four tabs split
