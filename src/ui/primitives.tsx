@@ -378,7 +378,11 @@ export function Sheet({
         aria-modal="true"
         className={cx(
           'relative flex w-full flex-col overflow-hidden bg-bg-elevated shadow-(--shadow-e3) animate-sheet-in',
-          'border-t border-border sm:border',
+          // No top border on mobile: it cannot follow the sheet's rounded top,
+          // so it stops short of both corners and reads as a scratch above the
+          // title rather than as an edge. The shadow already separates it from
+          // the scrim. On desktop the sheet floats, so a full border is right.
+          'sm:border sm:border-border',
           'rounded-t-(--radius-sheet) sm:max-w-lg sm:rounded-(--radius-sheet)',
           size === 'tall' ? 'h-[92dvh] sm:h-[86vh]' : 'max-h-[92dvh]',
         )}
@@ -389,7 +393,9 @@ export function Sheet({
           <div className="h-1 w-9 rounded-full bg-border-strong" />
         </div>
 
-        <div className="flex items-center gap-2 border-b border-border px-2 py-2">
+        {/* No divider under the title — spacing separates it well enough, and a
+            full-width rule directly under the heading was one more stray line. */}
+        <div className="flex items-center gap-2 px-2 pb-1 pt-2">
           <div className="min-w-0 flex-1 px-2">
             {typeof title === 'string' ? (
               <h2 className="truncate text-[17px] font-semibold tracking-[-0.01em]">{title}</h2>

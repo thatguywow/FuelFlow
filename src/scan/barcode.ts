@@ -282,6 +282,96 @@ export async function recognizeLabelText(): Promise<string[] | null> {
   return blocks.map((block) => block.text);
 }
 
+/**
+ * Grabs the current video frame as a JPEG data URL.
+ *
+ * Downscaled to a sane width first: a full-resolution phone frame is several
+ * megabytes of base64 to shuttle across the bridge, and OCR gains nothing from
+ * the extra pixels — label text is large and high-contrast.
+ */
+export function captureFrame(video: HTMLVideoElement, maxWidth = 1440): string | null {
+  const { videoWidth, videoHeight } = video;
+  if (!videoWidth || !videoHeight) return null;
+  const scale = Math.min(1, maxWidth / videoWidth);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(videoWidth * scale);
+  canvas.height = Math.round(videoHeight * scale);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.92);
+}
+
+/**
+ * On-device OCR over a frame the app captured itself.
+ *
+ * ML Kit reads from a file path, so the frame is written to the cache directory
+ * and deleted immediately afterwards — the photograph of your food never
+ * outlives the read, and nothing leaves the device either way.
+ */
+export async function recognizeLabelFromDataUrl(dataUrl: string): Promise<string[] | null> {
+  if (!Capacitor.isNativePlatform()) return null;
+  const { TextRecognition } = await import('@capacitor-mlkit/text-recognition');
+  const { Filesystem, Directory } = await import('@capacitor/filesystem');
+
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  const name = `ff-label-${Date.now()}.jpg`;
+  const written = await Filesystem.writeFile({
+    path: name,
+    data: base64,
+    directory: Directory.Cache,
+  });
+  try {
+    const { blocks } = await TextRecognition.processImage({ path: written.uri });
+    return blocks.map((block) => block.text);
+  } finally {
+    await Filesystem.deleteFile({ path: name, directory: Directory.Cache }).catch(() => {});
+  }
+}
+
+/**
+ * Opens a plain camera preview for the label scanner — no decoding loop, just
+ * frames to look at until the user presses the shutter.
+ */
+export async function openCameraPreview(
+  video: HTMLVideoElement,
+): Promise<ScannerHandle> {
+  const state = await cameraPermission();
+  if (state === 'denied') throw new CameraDeniedError();
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+    audio: false,
+  });
+  video.srcObject = stream;
+  await video.play();
+
+  const track = () => stream.getVideoTracks()[0] ?? null;
+  const hasTorch = () => {
+    const capabilities = track()?.getCapabilities?.() as { torch?: boolean } | undefined;
+    return capabilities?.torch === true;
+  };
+  return {
+    stop: () => {
+      stream.getTracks().forEach((t) => t.stop());
+      video.srcObject = null;
+    },
+    hasTorch,
+    setTorch: async (on: boolean) => {
+      const videoTrack = track();
+      if (!videoTrack || !hasTorch()) return false;
+      try {
+        await videoTrack.applyConstraints({
+          advanced: [{ torch: on }],
+        } as unknown as MediaTrackConstraints);
+        return on;
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
 /** Thrown when the camera is refused, so callers can offer a settings link. */
 export class CameraDeniedError extends Error {
   constructor() {

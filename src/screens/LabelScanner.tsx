@@ -1,20 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useUi } from '../state/ui';
 import { logFood, upsertFood } from '../db/repo';
 import {
   CameraDeniedError,
+  captureFrame,
   openAppSettings,
+  openCameraPreview,
   parseNutritionLabel,
+  recognizeLabelFromDataUrl,
   recognizeLabelText,
   type ParsedLabel,
+  type ScannerHandle,
 } from '../scan/barcode';
 import { N } from '../core/nutrients';
 import { formatCount } from '../core/format';
 import type { DayKey } from '../core/dates';
 import { Button, Card, EmptyState, Field, Input, Sheet, Toggle, cx } from '../ui/primitives';
 import { MealPicker } from './Sheets';
-import { IconBook, IconCheck } from '../ui/icons';
+import { IconBook, IconCheck, IconClose, IconFlash } from '../ui/icons';
 
 type Basis = '100g' | 'serving';
 
@@ -57,11 +61,16 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
   const toast = useUi((s) => s.toast);
 
   const native = Capacitor.isNativePlatform();
-  const [phase, setPhase] = useState<'idle' | 'reading' | 'form' | 'error' | 'denied'>(
-    native ? 'idle' : 'form',
+  const [phase, setPhase] = useState<'camera' | 'reading' | 'form' | 'error' | 'denied'>(
+    native ? 'camera' : 'form',
   );
   const [error, setError] = useState<string>();
   const [lines, setLines] = useState<string[]>([]);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const handleRef = useRef<ScannerHandle | null>(null);
+  const [torchOn, setTorchOn] = useState(false);
+  const [torchAvailable, setTorchAvailable] = useState(false);
 
   const [meal, setMeal] = useState(mealId);
   const [name, setName] = useState('');
@@ -71,7 +80,49 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
   const [save, setSave] = useState(true);
   const [values, setValues] = useState<Record<LabelField, string>>(EMPTY_VALUES);
 
-  const scan = async () => {
+  const stopCamera = () => {
+    handleRef.current?.stop();
+    handleRef.current = null;
+    setTorchOn(false);
+    setTorchAvailable(false);
+  };
+
+  /** Reads the text of a captured frame and fills in whatever it recognised. */
+  const readFrame = async (dataUrl: string) => {
+    setPhase('reading');
+    setError(undefined);
+    try {
+      const text = await recognizeLabelFromDataUrl(dataUrl);
+      if (!text || text.length === 0) {
+        setPhase('form');
+        return;
+      }
+      setLines(text);
+      applyParsed(parseNutritionLabel(text));
+      setPhase('form');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read the label.');
+      setPhase('error');
+    }
+  };
+
+  const shutter = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const frame = captureFrame(video);
+    if (!frame) return;
+    stopCamera();
+    await readFrame(frame);
+  };
+
+  /**
+   * Falls back to the operating system's own camera app.
+   *
+   * The in-app preview needs getUserMedia inside the WebView, which a given
+   * device or OEM build can refuse even with the permission granted. Rather
+   * than dead-end, the system camera still gets a photograph to read.
+   */
+  const scanWithSystemCamera = async () => {
     setPhase('reading');
     setError(undefined);
     try {
@@ -115,9 +166,45 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
   // Native opens the camera immediately: the user already chose "scan label",
   // so making them press a second button is pure friction.
   useEffect(() => {
-    if (native && phase === 'idle') void scan();
+    if (!native || phase !== 'camera') return;
+    let cancelled = false;
+    void (async () => {
+      const video = videoRef.current;
+      if (!video) return;
+      try {
+        const handle = await openCameraPreview(video);
+        if (cancelled) {
+          handle.stop();
+          return;
+        }
+        handleRef.current = handle;
+        setTorchAvailable(handle.hasTorch());
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof CameraDeniedError) {
+          setPhase('denied');
+          return;
+        }
+        // No in-app preview on this device — hand off rather than dead-end.
+        void scanWithSystemCamera();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [phase]);
+
+  // Release the camera whenever this sheet goes away, by any route.
+  useEffect(() => stopCamera, []);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeSheet();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [closeSheet]);
 
   // Only counts while the serving basis is selected. The field is hidden in
   // per-100g mode, so a value left over from an earlier choice is invisible —
@@ -177,6 +264,95 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
     toast(save ? `${food.name} saved and logged` : `${food.name} logged`);
   };
 
+  // Full-screen viewfinder, framed portrait for a nutrition panel rather than
+  // the wide slot the barcode scanner uses.
+  if (phase === 'camera') {
+    return (
+      <div className="fixed inset-0 z-50 animate-fade-in bg-black">
+        <video
+          ref={videoRef}
+          className="absolute inset-0 size-full object-cover"
+          playsInline
+          muted
+          autoPlay
+        />
+
+        <div className="pointer-events-none absolute inset-0">
+          <div
+            className="absolute left-1/2 top-[44%] h-[58%] w-[84%] -translate-x-1/2 -translate-y-1/2 rounded-3xl"
+            style={{ boxShadow: '0 0 0 9999px rgb(0 0 0 / 0.58)' }}
+          />
+          <div className="absolute left-1/2 top-[44%] h-[58%] w-[84%] -translate-x-1/2 -translate-y-1/2">
+            {[
+              'left-0 top-0 border-l-[3px] border-t-[3px] rounded-tl-2xl',
+              'right-0 top-0 border-r-[3px] border-t-[3px] rounded-tr-2xl',
+              'left-0 bottom-0 border-l-[3px] border-b-[3px] rounded-bl-2xl',
+              'right-0 bottom-0 border-r-[3px] border-b-[3px] rounded-br-2xl',
+            ].map((corner) => (
+              <span key={corner} className={cx('absolute size-9 border-white', corner)} />
+            ))}
+          </div>
+        </div>
+
+        <div className="safe-t absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-3">
+          <button
+            onClick={closeSheet}
+            aria-label="Close scanner"
+            className="grid size-11 place-items-center rounded-full bg-black/45 text-white backdrop-blur transition-transform active:scale-90"
+          >
+            <IconClose size={20} />
+          </button>
+          <p className="text-[15px] font-semibold text-white">Scan label</p>
+          {torchAvailable ? (
+            <button
+              onClick={async () => {
+                const next = !torchOn;
+                const achieved = await handleRef.current?.setTorch(next);
+                setTorchOn(achieved ?? false);
+                if (next && achieved === false) toast('This camera has no flash');
+              }}
+              aria-pressed={torchOn}
+              aria-label="Toggle flash"
+              className={cx(
+                'grid size-11 place-items-center rounded-full backdrop-blur transition-colors active:scale-90',
+                torchOn ? 'bg-white text-black' : 'bg-black/45 text-white',
+              )}
+            >
+              <IconFlash size={20} off={!torchOn} />
+            </button>
+          ) : (
+            <span className="size-11" />
+          )}
+        </div>
+
+        <div className="safe-b absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-4 pb-5 pt-10">
+          <p className="mb-4 text-center text-[13px] leading-relaxed text-white/80">
+            Fill the frame with the nutrition table. Reading happens on this device.
+          </p>
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => {
+                stopCamera();
+                setPhase('form');
+              }}
+              className="text-[13.5px] font-medium text-white/85"
+            >
+              Type it instead
+            </button>
+            <button
+              onClick={() => void shutter()}
+              aria-label="Capture label"
+              className="grid size-[68px] place-items-center rounded-full border-[3px] border-white/85 transition-transform active:scale-90"
+            >
+              <span className="size-14 rounded-full bg-white" />
+            </button>
+            <span className="w-[86px]" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Sheet
       open
@@ -220,11 +396,11 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
         </div>
       )}
 
-      {phase === 'error' && (
+      {phase === 'error' && Boolean(error) && (
         <div className="p-4">
           <EmptyState icon={<IconBook size={26} />} title="Could not read that" detail={error} />
           <div className="flex gap-2">
-            <Button className="flex-1" onClick={() => void scan()}>Try again</Button>
+            <Button className="flex-1" onClick={() => setPhase('camera')}>Try again</Button>
             <Button variant="primary" className="flex-1" onClick={() => setPhase('form')}>Type it instead</Button>
           </div>
         </div>
@@ -239,7 +415,7 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
                   ? `Read ${parsedCount} ${parsedCount === 1 ? 'value' : 'values'} off the label. Check them against the packet — anything it could not read confidently was left blank.`
                   : 'Nothing could be read from that photo. Fill the fields in by hand, or try again with better light.'}
               </span>
-              <Button size="sm" onClick={() => void scan()}>Rescan</Button>
+              <Button size="sm" onClick={() => setPhase('camera')}>Rescan</Button>
             </Card>
           ) : (
             <Card className="text-[12.5px] leading-relaxed text-faint">

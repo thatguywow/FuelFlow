@@ -29,6 +29,7 @@ export default function App() {
   useThemeSync();
   useCoreDataInstall();
   useProfileSeed();
+  useMidnightRollover();
 
   const profile = derived?.profile;
   // A brand-new profile still has its factory height and weight, which is the
@@ -131,6 +132,31 @@ export default function App() {
 function useProfileSeed() {
   useEffect(() => {
     void ensureProfile();
+  }, []);
+}
+
+/**
+ * Rolls the diary over at local midnight.
+ *
+ * Polled rather than scheduled for the exact moment: a phone suspends timers
+ * while the screen is off, so a single timeout aimed at midnight simply would
+ * not fire. Re-checking whenever the app returns to the foreground is what
+ * actually catches the common case of opening it the next morning.
+ */
+function useMidnightRollover() {
+  useEffect(() => {
+    const sync = () => useUi.getState().syncToday();
+    const onVisible = () => {
+      if (!document.hidden) sync();
+    };
+    const id = window.setInterval(sync, 30_000);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', sync);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', sync);
+    };
   }, []);
 }
 

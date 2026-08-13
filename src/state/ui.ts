@@ -40,6 +40,8 @@ export interface Toast {
 interface UiState {
   tab: Tab;
   day: DayKey;
+  /** The local calendar date as last observed, so a rollover can be detected. */
+  todayKey: DayKey;
   sheet: Sheet;
   toasts: Toast[];
   onboardingComplete: boolean;
@@ -49,6 +51,8 @@ interface UiState {
   setTab: (tab: Tab) => void;
   setDay: (day: DayKey) => void;
   stepDay: (delta: number) => void;
+  /** Re-read the wall clock and roll the diary over at local midnight. */
+  syncToday: () => void;
   openSheet: (sheet: Sheet) => void;
   closeSheet: () => void;
   setAddMenu: (open: boolean) => void;
@@ -62,6 +66,7 @@ let toastId = 0;
 export const useUi = create<UiState>((set, get) => ({
   tab: 'today',
   day: toDayKey(),
+  todayKey: toDayKey(),
   sheet: { kind: 'none' },
   toasts: [],
   onboardingComplete: false,
@@ -73,6 +78,20 @@ export const useUi = create<UiState>((set, get) => ({
     const [y, m, d] = get().day.split('-').map(Number);
     const date = new Date(y ?? 1970, (m ?? 1) - 1, (d ?? 1) + delta);
     set({ day: toDayKey(date) });
+  },
+
+  /**
+   * The diary day is fixed when the store is created, so an app left open
+   * across local midnight would keep calling yesterday "Today" and file new
+   * entries under it. Following the rollover only applies when the user is
+   * sitting on the day that has just stopped being today — if they had
+   * navigated elsewhere, moving the screen under them would be worse.
+   */
+  syncToday: () => {
+    const observed = toDayKey();
+    const { todayKey, day } = get();
+    if (observed === todayKey) return;
+    set({ todayKey: observed, day: day === todayKey ? observed : day });
   },
 
   // Opening a sheet always dismisses the add menu; leaving it expanded behind a

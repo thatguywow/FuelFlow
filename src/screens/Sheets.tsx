@@ -8,17 +8,28 @@ import { logWeight, quickAdd, upsertFood, logFood } from '../db/repo';
 import { formatCount } from '../core/format';
 import { Button, Card, Field, Input, Sheet, cx } from '../ui/primitives';
 
-/** Weigh-in sheet. Defaults to today and to the user's own unit. */
+/**
+ * Weigh-in sheet, in the user's own unit.
+ *
+ * Defaults to the day being viewed rather than to today, so a morning you
+ * forgot can be filled in from that day's screen — the same rule the diary
+ * follows. Future days are still excluded: there is no weight to record for a
+ * day that has not happened, so the picker is capped at today.
+ */
 export function LogWeight() {
   const closeSheet = useUi((s) => s.closeSheet);
   const toast = useUi((s) => s.toast);
+  const selectedDay = useUi((s) => s.day);
   const derived = useTargets();
   const unit = derived?.profile.display.massUnit ?? 'kg';
 
   const [value, setValue] = useState(() =>
     derived ? fromKg(derived.currentWeightKg, unit).toFixed(1) : '',
   );
-  const [day, setDay] = useState<DayKey>(toDayKey());
+  // Day keys are `YYYY-MM-DD`, so a string comparison is a date comparison.
+  const [day, setDay] = useState<DayKey>(() =>
+    selectedDay > toDayKey() ? toDayKey() : selectedDay,
+  );
 
   return (
     <Sheet

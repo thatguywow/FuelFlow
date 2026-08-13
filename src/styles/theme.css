@@ -354,11 +354,12 @@
 }
 
 /**
- * Card surface with a light-catching top edge.
+ * Card surface.
  *
- * The 1px inset highlight along the top is the single cheapest trick for making
- * a dark surface look like a physical panel rather than a filled rectangle — it
- * reads as light falling from above.
+ * Deliberately no inset top highlight. A 1.5px lighter line along the top edge
+ * is a common trick for faking a lit panel, but at this border radius it cannot
+ * follow the corners cleanly — it stops short and reads as a stray scratch above
+ * every card rather than as light. The border and shadow carry the elevation.
  */
 @utility panel {
   position: relative;
@@ -366,17 +367,6 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-e1);
-
-  &::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    background: linear-gradient(180deg, var(--ff-hairline), transparent 42%);
-    mask: linear-gradient(180deg, #000 0 1.5px, transparent 1.5px);
-    -webkit-mask: linear-gradient(180deg, #000 0 1.5px, transparent 1.5px);
-  }
 }
 
 /** The brand gradient, for text or as a background. */

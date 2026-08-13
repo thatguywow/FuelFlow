@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useUi } from '../state/ui';
 import { useDay, useTargets } from '../state/useTargets';
-import { formatDayLabel, isToday, toDayKey } from '../core/dates';
+import { formatDayLabel, toDayKey } from '../core/dates';
 import { N, sumNutrients } from '../core/nutrients';
 import { describeConfidence } from '../core/adaptive';
 import { addWater, currentStreak, deleteEntry, restoreEntry, setDayComplete } from '../db/repo';
@@ -43,12 +43,11 @@ export default function Today() {
   const streak = useLiveQuery(() => currentStreak(), [], 0);
 
   // Swiping is how people move through days on a phone; the chevrons stay for
-  // pointer users. Forward is blocked on today so you cannot swipe into
-  // tomorrow.
+  // pointer users. Both directions are open: a day you missed has to be
+  // fillable after the fact, and tomorrow has to be reachable to pre-log a meal
+  // you have already planned.
   const swipeRef = useSwipe<HTMLDivElement>({
-    onSwipeLeft: () => {
-      if (!isToday(day)) stepDay(1);
-    },
+    onSwipeLeft: () => stepDay(1),
     onSwipeRight: () => stepDay(-1),
   });
 
@@ -95,11 +94,7 @@ export default function Today() {
           )}
         </button>
 
-        <IconButton
-          label="Next day"
-          onClick={() => stepDay(1)}
-          className={cx(isToday(day) && 'pointer-events-none opacity-30')}
-        >
+        <IconButton label="Next day" onClick={() => stepDay(1)}>
           <IconChevronRight />
         </IconButton>
       </header>
