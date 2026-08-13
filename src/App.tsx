@@ -5,6 +5,7 @@ import { useTargets } from './state/useTargets';
 import { ensureProfile, readProfile } from './db/repo';
 import { ensureCoreData } from './db/seed';
 import { dismissBoot } from './main';
+import { applyNativeChrome } from './ui/systemChrome';
 import { ToastHost, cx } from './ui/primitives';
 import { IconBody, IconChart, IconFlame, IconMore } from './ui/icons';
 import Today from './screens/Today';
@@ -46,8 +47,17 @@ export default function App() {
   if (needsOnboarding) return <Onboarding />;
 
   return (
-    <div className="mx-auto flex min-h-[100dvh] w-full max-w-2xl flex-col">
-      <main className="flex-1 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))]">
+    <div className="mx-auto flex h-[100dvh] w-full max-w-2xl flex-col overflow-hidden">
+      {/*
+        The page scrolls inside <main>, not on the document.
+
+        Android draws the *root* scroller's scrollbar natively, outside the
+        page's control — `::-webkit-scrollbar` and `scrollbar-width` do nothing
+        to it, which is why a pale overlay bar kept appearing down the edge of
+        the diary however many times it was hidden in CSS. A nested scroll
+        container is a normal element, so hiding its bar actually works.
+      */}
+      <main className="no-scrollbar flex-1 overflow-y-auto overscroll-y-contain pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))]">
         {tab === 'today' && <Today />}
         {tab === 'trends' && <Trends />}
         {tab === 'body' && <Body />}
@@ -189,7 +199,22 @@ function useThemeSync() {
       document.documentElement.dataset.theme = resolved;
       document
         .querySelector('meta[name="theme-color"]')
-        ?.setAttribute('content', resolved === 'dark' ? '#0e1015' : '#f5f7fb');
+        ?.setAttribute('content', resolved === 'dark' ? '#080a0f' : '#f5f7fb');
+
+      // Mirror for the pre-paint script in index.html, which has to pick a
+      // ground for the launch screen before IndexedDB can be opened. Written
+      // here rather than where the setting is saved so it also tracks the OS
+      // flipping under a "system" preference.
+      try {
+        localStorage.setItem('ff.theme', resolved);
+      } catch {
+        /* storage disabled; the launch screen falls back to the OS setting */
+      }
+
+      // Match the Android system bars to the app rather than to the OS theme.
+      // Without this, setting the app to light on a dark phone leaves a black
+      // navigation bar under a white app.
+      void applyNativeChrome(resolved);
     };
     apply();
     media.addEventListener('change', apply);

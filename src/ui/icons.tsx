@@ -103,6 +103,38 @@ export const IconLabel = (p: IconProps) => (
 );
 
 /**
+ * The app's mark: the 270° gauge the Today screen opens with.
+ *
+ * Same artwork as the launcher icon and the launch screen, so the thing on the
+ * home screen, the thing while it loads and the thing at the top of onboarding
+ * are one shape. Drawn rather than stroked from `currentColor` because the
+ * two-tone track-and-progress reading is the whole point.
+ */
+export const IconMark = ({ size = 32, className }: { size?: number; className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 64 64" fill="none" className={className} aria-hidden="true">
+    <defs>
+      <linearGradient id="ff-mark-g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stopColor="var(--ff-brand)" />
+        <stop offset="55%" stopColor="var(--ff-brand-2)" />
+        <stop offset="100%" stopColor="var(--ff-brand-3)" />
+      </linearGradient>
+    </defs>
+    <path
+      d="M17.86 46.14A20 20 0 1 1 46.14 46.14"
+      stroke="var(--color-surface-3)"
+      strokeWidth="7.5"
+      strokeLinecap="round"
+    />
+    <path
+      d="M17.86 46.14A20 20 0 0 1 44.98 16.79"
+      stroke="url(#ff-mark-g)"
+      strokeWidth="7.5"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
+/**
  * Writing a meal out in words.
  *
  * Not a sparkle: that glyph has become shorthand for "an AI did this", and this

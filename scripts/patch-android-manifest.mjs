@@ -34,6 +34,24 @@ if (!existsSync(MANIFEST)) {
 }
 
 let xml = readFileSync(MANIFEST, 'utf8');
+
+/**
+ * Portrait only.
+ *
+ * Nothing in the app is designed for landscape — the gauge, the diary and the
+ * tab bar all assume a tall window — and a rotation mid-entry destroys and
+ * recreates the activity, which drops whatever was half-typed into a sheet.
+ * `orientation|screenSize|keyboardHidden` in configChanges keeps the activity
+ * alive for the configuration changes Android would otherwise restart it for.
+ */
+if (!/android:screenOrientation=/.test(xml)) {
+  xml = xml.replace(
+    /(<activity\b[^>]*?)(\s*>)/,
+    '$1\n            android:screenOrientation="portrait"$2',
+  );
+  console.log('Locked the main activity to portrait.');
+}
+
 const missing = DECLARATIONS.filter((line) => {
   const name = /android:name="([^"]+)"/.exec(line)?.[1];
   return name ? !xml.includes(`android:name="${name}"`) : true;

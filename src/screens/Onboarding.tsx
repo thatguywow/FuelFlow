@@ -15,7 +15,7 @@ import {
   type ReferenceSex,
 } from '../core/profile';
 import { Button, Card, Field, Input, Segmented, cx } from '../ui/primitives';
-import { IconCheck, IconFlame } from '../ui/icons';
+import { IconCheck, IconMark } from '../ui/icons';
 
 /**
  * First-run setup.
@@ -70,8 +70,10 @@ export default function Onboarding() {
   const steps = [
     // ---- 0: welcome ----
     <div key="welcome" className="space-y-5 text-center">
-      <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-brand-soft text-brand">
-        <IconFlame size={30} />
+      {/* The app's own mark, not a generic flame — same artwork as the launcher
+          icon and the launch screen. */}
+      <div className="mx-auto grid size-[72px] place-items-center">
+        <IconMark size={64} />
       </div>
       <div>
         <h1 className="text-[26px] font-semibold tracking-[-0.02em]">FuelFlow</h1>
@@ -243,7 +245,7 @@ export default function Onboarding() {
   const last = step === steps.length - 1;
 
   return (
-    <div className="mx-auto flex min-h-[100dvh] w-full max-w-lg flex-col bg-bg">
+    <div className="mx-auto flex h-[100dvh] w-full max-w-lg flex-col overflow-hidden bg-bg">
       {/* No pt-* here: `safe-t` is emitted later than the padding utilities and
           would overwrite it. The clearance lives in --space-safe-t. */}
       <div className="safe-t flex gap-1.5 px-4">

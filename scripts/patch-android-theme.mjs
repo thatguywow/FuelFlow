@@ -66,19 +66,140 @@ let colors = existsSync(colorsPath)
   ? readFileSync(colorsPath, 'utf8')
   : '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n';
 colors = upsertColor(colors, 'ffSystemChrome', DARK_BG);
+// The launcher tile keeps the app's elevated surface in both configurations —
+// an icon that changed colour with the OS theme would be unrecognisable.
+colors = upsertColor(colors, 'ffIconBackground', '#0E1015');
 writeFileSync(colorsPath, colors);
 
 const nightColorsDir = path.join(RES, 'values-night');
 mkdirSync(nightColorsDir, { recursive: true });
 writeFileSync(
   path.join(nightColorsDir, 'colors.xml'),
-  `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ffSystemChrome">${DARK_BG}</color>\n</resources>\n`,
+  `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ffSystemChrome">${DARK_BG}</color>\n    <color name="ffIconBackground">#0E1015</color>\n</resources>\n`,
 );
 
 // The default (light) qualifier gets the light ground, so a device in light
 // mode does not show a dark bar under a light app.
 const lightColorsPath = path.join(RES, 'values', 'colors.xml');
 writeFileSync(lightColorsPath, upsertColor(readFileSync(lightColorsPath, 'utf8'), 'ffSystemChrome', LIGHT_BG));
+
+// --- launch window --------------------------------------------------------
+//
+// The activity is on screen before the WebView has parsed a byte, so anything
+// drawn by index.html arrives late — the app appeared to sit on a black
+// rectangle and then flash a loader. A layer-list with the mark centred on the
+// app's own ground is painted by the OS from the first frame, so the native
+// window and the HTML loader show the same thing and the handover is invisible.
+const drawableDir = path.join(RES, 'drawable');
+mkdirSync(drawableDir, { recursive: true });
+
+// The gauge, as a vector so it stays crisp at any density.
+writeFileSync(
+  path.join(drawableDir, 'ff_launch_mark.xml'),
+  `<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by scripts/patch-android-theme.mjs -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M17.86,46.14A20,20 0 1 1 46.14,46.14"
+        android:strokeColor="#2A3242"
+        android:strokeWidth="7.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M17.86,46.14A20,20 0 0 1 44.98,16.79"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="7.5"
+        android:strokeLineCap="round" />
+</vector>
+`,
+);
+
+writeFileSync(
+  path.join(drawableDir, 'ff_launch.xml'),
+  `<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by scripts/patch-android-theme.mjs -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/ffSystemChrome" />
+    <item android:gravity="center">
+        <bitmap android:src="@drawable/ff_launch_mark" android:gravity="center" />
+    </item>
+</layer-list>
+`,
+);
+
+// --- launcher icon --------------------------------------------------------
+//
+// An adaptive icon is a background layer plus a foreground layer, each drawn
+// oversized so the launcher can mask it to whatever shape the device uses. The
+// monochrome layer is what Android 13+ tints for themed icons; without it the
+// launcher falls back to a washed-out crop of the colour icon.
+writeFileSync(
+  path.join(drawableDir, 'ff_icon_foreground.xml'),
+  `<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by scripts/patch-android-theme.mjs -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:translateX="22" android:translateY="22" android:scaleX="1.03" android:scaleY="1.03">
+        <path
+            android:pathData="M17.86,46.14A20,20 0 1 1 46.14,46.14"
+            android:strokeColor="#2A3242"
+            android:strokeWidth="7.5"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M17.86,46.14A20,20 0 0 1 44.98,16.79"
+            android:strokeColor="#38BDF8"
+            android:strokeWidth="7.5"
+            android:strokeLineCap="round" />
+    </group>
+</vector>
+`,
+);
+
+writeFileSync(
+  path.join(drawableDir, 'ff_icon_monochrome.xml'),
+  `<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by scripts/patch-android-theme.mjs -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108"
+    android:tint="?attr/colorControlNormal">
+    <group android:translateX="22" android:translateY="22" android:scaleX="1.03" android:scaleY="1.03">
+        <path
+            android:pathData="M17.86,46.14A20,20 0 1 1 46.14,46.14"
+            android:strokeColor="#000000"
+            android:strokeAlpha="0.35"
+            android:strokeWidth="7.5"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M17.86,46.14A20,20 0 0 1 44.98,16.79"
+            android:strokeColor="#000000"
+            android:strokeWidth="7.5"
+            android:strokeLineCap="round" />
+    </group>
+</vector>
+`,
+);
+
+const mipmapDir = path.join(RES, 'mipmap-anydpi-v26');
+mkdirSync(mipmapDir, { recursive: true });
+const adaptive = `<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by scripts/patch-android-theme.mjs -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ffIconBackground" />
+    <foreground android:drawable="@drawable/ff_icon_foreground" />
+    <monochrome android:drawable="@drawable/ff_icon_monochrome" />
+</adaptive-icon>
+`;
+writeFileSync(path.join(mipmapDir, 'ic_launcher.xml'), adaptive);
+writeFileSync(path.join(mipmapDir, 'ic_launcher_round.xml'), adaptive);
 
 // --- styles ---------------------------------------------------------------
 const stylesPath = path.join(RES, 'values', 'styles.xml');
@@ -96,7 +217,14 @@ for (const style of ['AppTheme.NoActionBar', 'AppTheme.NoActionBarLaunch']) {
   // Light chrome in the default (light) configuration means dark icons.
   styles = upsertStyleItem(styles, style, 'android:windowLightNavigationBar', 'true');
   styles = upsertStyleItem(styles, style, 'android:windowLightStatusBar', 'true');
-  styles = upsertStyleItem(styles, style, 'android:windowBackground', CHROME);
+  // Only the launch theme gets the mark; the running theme keeps a flat ground
+  // so the drawable is not sitting behind the app for its whole life.
+  styles = upsertStyleItem(
+    styles,
+    style,
+    'android:windowBackground',
+    style.endsWith('Launch') ? '@drawable/ff_launch' : CHROME,
+  );
 }
 writeFileSync(stylesPath, styles);
 
@@ -115,6 +243,14 @@ const nightStyles = `<?xml version="1.0" encoding="utf-8"?>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowBackground">@color/ffSystemChrome</item>
+    </style>
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="android:background">@drawable/ff_launch</item>
+        <item name="android:navigationBarColor">@color/ffSystemChrome</item>
+        <item name="android:statusBarColor">@color/ffSystemChrome</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">@drawable/ff_launch</item>
     </style>
 </resources>
 `;

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
@@ -16,6 +16,35 @@
       content="FuelFlow — local-first calorie, macro and micronutrient tracker with adaptive TDEE. Works offline. No account required."
     />
     <title>FuelFlow</title>
+
+    <script>
+      // Resolve the theme before the first paint.
+      //
+      // `data-theme` was hardcoded to "dark" on <html>, so the launch screen was
+      // always dark — including for someone whose app is set to light — and the
+      // page flashed when React later applied the real setting. The preference
+      // lives in IndexedDB, which cannot be read synchronously, so the app
+      // mirrors the resolved value into localStorage for this one purpose.
+      //
+      // Placed after the meta tags so theme-color is present to update.
+      (function () {
+        var resolved = 'dark';
+        try {
+          var saved = localStorage.getItem('ff.theme');
+          resolved =
+            saved === 'light' || saved === 'dark'
+              ? saved
+              : window.matchMedia('(prefers-color-scheme: light)').matches
+                ? 'light'
+                : 'dark';
+        } catch (e) {
+          /* private mode, or storage disabled — dark is the app's default */
+        }
+        document.documentElement.dataset.theme = resolved;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', resolved === 'dark' ? '#080a0f' : '#f5f7fb');
+      })();
+    </script>
   </head>
   <body>
     <!--
