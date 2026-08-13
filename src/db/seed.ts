@@ -1,4 +1,4 @@
-import { db, newId, tokenize, type Food, type Portion } from './schema';
+import { db, tokenize, type Food, type Portion } from './schema';
 import type { Nutrients } from '../core/nutrients';
 
 /**
@@ -13,6 +13,8 @@ import type { Nutrients } from '../core/nutrients';
 
 const VERSION_KEY = 'coreData.version';
 const COUNT_KEY = 'coreData.count';
+/** Set once an install has been through the duplicate-collapsing pass. */
+const DEDUPED_KEY = 'coreData.deduped';
 
 /** `[name, category, values[], portions[][], fdcId]` */
 type PackedFood = [string, string, (number | null)[], [string, number][], number];
@@ -60,7 +62,29 @@ function datasetUrl(): string {
  * state, not an error: the app runs fine on the personal, remote and online
  * tiers alone, and Settings offers to install the core data later.
  */
-export async function ensureCoreData(
+/**
+ * Shared in-flight install.
+ *
+ * Two overlapping calls — the mount effect and the Settings button, or a reload
+ * part-way through the first run — each saw an empty table, each minted its own
+ * random ids for the same USDA records, and each wrote them. The result was
+ * every affected food stored twice and listed twice in search, permanently. The
+ * version stamp cannot prevent it: neither run has written it yet.
+ */
+let inFlight: Promise<number> | null = null;
+
+export function ensureCoreData(
+  onProgress?: (progress: SeedProgress) => void,
+  options: { force?: boolean } = {},
+): Promise<number> {
+  if (inFlight) return inFlight;
+  inFlight = installCoreData(onProgress, options).finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+async function installCoreData(
   onProgress?: (progress: SeedProgress) => void,
   options: { force?: boolean } = {},
 ): Promise<number> {
@@ -102,8 +126,12 @@ export async function ensureCoreData(
     return 0;
   }
 
-  const current = await db.kv.get(VERSION_KEY);
-  if (!options.force && current?.value === dataset.version) {
+  const [current, deduped] = await Promise.all([db.kv.get(VERSION_KEY), db.kv.get(DEDUPED_KEY)]);
+  // An install already on this version is still re-run once if it predates the
+  // duplicate-collapsing pass — otherwise a device seeded twice keeps showing
+  // every affected food twice and nothing would ever clear it.
+  const needsRepair = deduped?.value !== true;
+  if (!options.force && !needsRepair && current?.value === dataset.version) {
     report({ phase: 'done', loaded: dataset.foods.length, total: dataset.foods.length });
     return 0;
   }
@@ -111,9 +139,26 @@ export async function ensureCoreData(
   // Existing USDA rows are replaced wholesale, but their ids are reused so that
   // diary entries, favourites and frecency history stay attached to the food
   // they were logged against.
+  //
+  // Any USDA record already stored more than once is collapsed here: one id is
+  // kept (the lowest, so the choice is stable across devices) and the rest are
+  // deleted after the write. Installs seeded before the id scheme became
+  // deterministic carry these duplicates and would otherwise keep showing every
+  // affected food twice in search forever.
   const existing = await db.foods.where('source').equals('usda').toArray();
   const idByFdc = new Map<string, string>();
-  for (const food of existing) if (food.sourceId) idByFdc.set(food.sourceId, food.id);
+  const staleIds: string[] = [];
+  for (const food of existing) {
+    if (!food.sourceId) continue;
+    const kept = idByFdc.get(food.sourceId);
+    if (kept === undefined) {
+      idByFdc.set(food.sourceId, food.id);
+      continue;
+    }
+    const keep = kept < food.id ? kept : food.id;
+    staleIds.push(kept < food.id ? food.id : kept);
+    idByFdc.set(food.sourceId, keep);
+  }
 
   const total = dataset.foods.length;
   const now = Date.now();
@@ -133,10 +178,15 @@ export async function ensureCoreData(
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
+  // Drop the redundant copies only once their survivor has been rewritten, so
+  // an interrupted install never leaves the food missing altogether.
+  if (staleIds.length > 0) await db.foods.bulkDelete(staleIds);
+
   await db.kv.bulkPut([
     { key: VERSION_KEY, value: dataset.version, updatedAt: now },
     { key: COUNT_KEY, value: written, updatedAt: now },
     { key: 'coreData.source', value: dataset.source, updatedAt: now },
+    { key: DEDUPED_KEY, value: true, updatedAt: now },
   ]);
 
   report({ phase: 'done', loaded: written, total });
@@ -170,7 +220,10 @@ function unpack(
 
   const sourceId = String(fdcId);
   return {
-    id: idByFdc.get(sourceId) ?? newId(),
+    // Derived from the USDA id rather than random, so a second run overwrites
+    // the same row instead of inserting a rival copy of it. An existing id
+    // still wins, so upgrading an install keeps its favourites and history.
+    id: idByFdc.get(sourceId) ?? `usda-${sourceId}`,
     source: 'usda',
     sourceId,
     name,

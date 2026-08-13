@@ -79,11 +79,15 @@ export default function AddFood({ mealId, day }: { mealId: string; day: DayKey }
 
   const grouped = useMemo(() => {
     const order: SearchHit['tier'][] = ['personal', 'core', 'remote', 'online'];
+    // Named by where the data actually comes from. "Generic foods" and
+    // "Branded database" said nothing about provenance, and two of these tiers
+    // are both Open Food Facts — one a snapshot on the device, one the live
+    // API — which is impossible to tell apart from the old labels.
     const labels: Record<SearchHit['tier'], string> = {
       personal: 'Your foods',
-      core: 'Generic foods',
-      remote: 'Branded database',
-      online: 'Open Food Facts',
+      core: 'Generic foods · USDA',
+      remote: 'Packaged foods · on this device',
+      online: 'Packaged foods · Open Food Facts',
     };
     return order
       .map((tier) => ({ tier, label: labels[tier], items: shown.filter((h) => h.tier === tier) }))

@@ -102,6 +102,20 @@ export const IconLabel = (p: IconProps) => (
   </Svg>
 );
 
+/**
+ * Writing a meal out in words.
+ *
+ * Not a sparkle: that glyph has become shorthand for "an AI did this", and this
+ * feature is a deterministic parser — it reads quantities and units, it does not
+ * guess. Lines and a pencil say what it is.
+ */
+export const IconCompose = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 6.5h13M4 11h13M4 15.5h6" />
+    <path d="m13.4 19.8 5.3-5.3a1.7 1.7 0 0 0-2.4-2.4l-5.3 5.3-.4 2.8z" />
+  </Svg>
+);
+
 export const IconChevronLeft = (p: IconProps) => (
   <Svg {...p}>
     <path d="m14.5 6-6 6 6 6" />

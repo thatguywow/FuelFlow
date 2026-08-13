@@ -3,7 +3,7 @@ import { useUi } from '../state/ui';
 import { useTargets } from '../state/useTargets';
 import { cx } from '../ui/primitives';
 import { tapFeedback } from '../ui/motion';
-import { IconLabel, IconPlus, IconScan, IconSearch, IconSparkle } from '../ui/icons';
+import { IconCompose, IconLabel, IconPlus, IconScan, IconSearch } from '../ui/icons';
 
 /**
  * The central add button and its menu.
@@ -91,7 +91,7 @@ export default function AddMenu() {
       id: 'quick-log',
       label: 'Log a whole meal',
       detail: 'Write it out, log it in one go',
-      icon: <IconSparkle size={19} />,
+      icon: <IconCompose size={19} />,
       run: () => openSheet({ kind: 'quick-log', mealId, day }),
     },
     // Water is deliberately absent: it has its own row on the Today card, one

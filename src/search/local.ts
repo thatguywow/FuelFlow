@@ -42,21 +42,53 @@ export interface LocalSearchOptions {
  * either a component of the food or a processed form of it.
  */
 const NARROWING_TERMS = [
+  // Components of a food rather than the food.
   'yolk',
   'white',
-  'dried',
-  'powder',
-  'dehydrated',
-  'concentrate',
   'skin',
   'bone',
   'shell',
   'peel',
   'leaves',
+  // Preserved or reconstituted forms.
+  'dried',
+  'powder',
+  'dehydrated',
+  'concentrate',
   'juice',
   'canned',
   'infant',
   'baby food',
+  // Prepared products made *from* the food. Searching "chicken breast" was
+  // returning "Chicken breast, roll, oven-roasted" and "breast tenders,
+  // breaded" above the actual cut, because those names are shorter and carry
+  // fewer comma-separated clauses — the two things the score already rewards.
+  // Nobody typing a bare cut means the deli product.
+  'roll',
+  'breaded',
+  'battered',
+  'sliced',
+  'flavor',
+  'flavour',
+  'smoked',
+  'cured',
+  'patty',
+  'nugget',
+  'luncheon',
+  'spread',
+  'with added solution',
+  // Things made *from* the food, which USDA files under the food's own name:
+  // "Fish oil, salmon" outranked every actual salmon, and "Egg custards, dry
+  // mix" outranked the egg. Naming the term in the query lifts the penalty, so
+  // searching "olive oil" or "cake mix" still works.
+  'oil',
+  'mix',
+  'custard',
+  'chips',
+  'snack',
+  'sauce',
+  'soup',
+  'candies',
 ] as const;
 
 /** Source trust ordering: your own data first, then curated, then crowd-sourced. */
@@ -166,12 +198,20 @@ function scoreFood(
 
   // USDA descriptions are "food, qualifier, qualifier, …". Each extra clause
   // narrows the record, so a plain search should favour the plainer entry.
-  score -= Math.max(0, name.split(',').length - 2) * 1.5;
+  //
+  // Kept deliberately light. The canonical generic entries are the verbose
+  // ones — "Chicken, broilers or fryers, breast, meat only, raw" — so a heavy
+  // per-clause penalty demotes exactly the records a bare query wants, and
+  // hands the top spot to short deli-product names instead.
+  score -= Math.max(0, name.split(',').length - 2) * 0.8;
 
-  // Searching "egg" should not surface dried egg yolk powder. Penalise
-  // component and processing qualifiers the query did not actually ask for.
+  // Searching "egg" should not surface dried egg yolk powder, and "chicken
+  // breast" should not surface a sliced oven-roasted roll. Penalise component
+  // and prepared-product qualifiers the query did not actually ask for. This
+  // has to outweigh the concision bonus a short product name earns, or the
+  // product still wins.
   for (const term of NARROWING_TERMS) {
-    if (name.includes(term) && !tokens.some((token) => term.startsWith(token))) score -= 4;
+    if (name.includes(term) && !tokens.some((token) => term.startsWith(token))) score -= 9;
   }
 
   // Records without usable energy data are noise.
