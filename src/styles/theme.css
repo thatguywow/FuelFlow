@@ -311,12 +311,20 @@
   }
 }
 
-/* Frosted bars — falls back to a solid tint where backdrop-filter is absent. */
+/*
+ * Frosted bars — falls back to a solid tint where backdrop-filter is absent.
+ *
+ * Do not hand-write the `-webkit-` prefix here. Lightning CSS treats the
+ * prefixed and standard lines as one logical property, keeps a single winner and
+ * re-prefixes for its own targets; when it kept the `-webkit-` form the compiled
+ * rule was one Chrome ignores, so the bar had no blur at all and the diary
+ * showed straight through it. Authoring only the standard property lets the
+ * bundler emit whatever prefixes its targets actually need.
+ */
 @utility glass {
   background: color-mix(in oklab, var(--color-bg-elevated) 72%, transparent);
-  @supports (backdrop-filter: blur(1px)) {
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     backdrop-filter: saturate(180%) blur(24px);
-    -webkit-backdrop-filter: saturate(180%) blur(24px);
   }
 }
 
