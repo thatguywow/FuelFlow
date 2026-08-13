@@ -168,14 +168,15 @@ export default function Today() {
         {macroData.map((macro) => (
           <MacroRow key={macro.key} macro={macro} />
         ))}
+        {/* Docked as the card's last child — its own divider only reads as a
+            divider from inside the card. As a sibling it was a stray hairline. */}
+        <WaterRow
+          day={day}
+          ml={dayData.waterMl}
+          targetMl={derived.nutrientTargets.get(N.WATER)?.target ?? 3000}
+        />
       </Card>
       </section>
-
-      <WaterRow
-        day={day}
-        ml={dayData.waterMl}
-        targetMl={derived.nutrientTargets.get(N.WATER)?.target ?? 3000}
-      />
 
       {/* ---------- Adaptive status ---------- */}
       {showLearning && (
