@@ -480,7 +480,7 @@ function WaterRow({ day, ml, targetMl }: { day: DayKey; ml: number; targetMl: nu
 
 function TodaySkeleton() {
   return (
-    <div className="safe-t space-y-3 px-4 pt-6">
+    <div className="safe-t space-y-3 px-4">
       <div className="skeleton h-10 rounded-xl" />
       <div className="skeleton h-80 rounded-(--radius-card)" />
       <div className="skeleton h-24 rounded-(--radius-card)" />

@@ -244,7 +244,9 @@ export default function Onboarding() {
 
   return (
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-lg flex-col bg-bg">
-      <div className="safe-t flex gap-1.5 px-4 pt-4">
+      {/* No pt-* here: `safe-t` is emitted later than the padding utilities and
+          would overwrite it. The clearance lives in --space-safe-t. */}
+      <div className="safe-t flex gap-1.5 px-4">
         {steps.map((_, index) => (
           <div
             key={index}

@@ -26,7 +26,7 @@ export default function More() {
     update({ display: { ...profile.display, ...patch } });
 
   return (
-    <div className="safe-t space-y-5 px-4 pb-8 pt-6">
+    <div className="safe-t space-y-5 px-4 pb-8">
       <ScreenHeader title="More" />
 
       <section>

@@ -53,7 +53,7 @@ export default function Trends() {
   );
 
   return (
-    <div className="safe-t space-y-5 px-4 pb-8 pt-6">
+    <div className="safe-t space-y-5 px-4 pb-8">
       <div className="flex items-start justify-between gap-3">
         <ScreenHeader title="Trends" />
         <Segmented

@@ -152,6 +152,12 @@
   --radius-sheet: 2rem;
   --radius-pill: 999px;
 
+  /* Minimum clearance from the top and bottom of the display, used as the floor
+     under the safe-area insets. Content flush against the edge is the single
+     clearest tell of a web page wearing an app's clothes. */
+  --space-safe-t: 1.25rem;
+  --space-safe-b: 0.75rem;
+
   --shadow-e1: var(--ff-shadow-1);
   --shadow-e2: var(--ff-shadow-2);
   --shadow-e3: var(--ff-shadow-3);
@@ -293,11 +299,21 @@
    Utilities
 -------------------------------------------------------------------------- */
 
+/*
+ * Safe-area padding with a floor.
+ *
+ * `env(safe-area-inset-*)` is 0 in a browser and on any device without a notch
+ * or gesture bar. These utilities are emitted after `pt-*` / `p-*` in the
+ * compiled sheet, so a bare `env()` did not merely fail to add room — it won the
+ * cascade and overwrote the screen's own padding with 0, leaving content flush
+ * against the top and bottom of the display. The floor makes that impossible
+ * while still yielding to a real inset when the device reports one.
+ */
 @utility safe-t {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: max(env(safe-area-inset-top, 0px), var(--space-safe-t));
 }
 @utility safe-b {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--space-safe-b));
 }
 @utility safe-x {
   padding-left: env(safe-area-inset-left, 0px);

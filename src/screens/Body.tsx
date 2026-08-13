@@ -43,7 +43,7 @@ export default function Body() {
   const projection = goal && rate ? projectGoalDate(currentWeightKg, goal, rate.kgPerWeek) : null;
 
   return (
-    <div className="safe-t space-y-5 px-4 pb-8 pt-6">
+    <div className="safe-t space-y-5 px-4 pb-8">
       <ScreenHeader title="Body" />
 
       {/* ---------- Weight ---------- */}

@@ -119,7 +119,11 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const serving = Number(servingG) || 0;
+  // Only counts while the serving basis is selected. The field is hidden in
+  // per-100g mode, so a value left over from an earlier choice is invisible —
+  // and it used to still decide the portion, logging "1 serving (25 g)" for a
+  // panel the user had just told us was per 100 g.
+  const serving = basis === 'serving' ? Number(servingG) || 0 : 0;
   const parsedCount = Object.values(values).filter((v) => v !== '').length;
   const valid = Number(values.kcal) > 0 && (basis === '100g' || serving > 0);
   const setValue = (key: LabelField) => (event: React.ChangeEvent<HTMLInputElement>) =>
