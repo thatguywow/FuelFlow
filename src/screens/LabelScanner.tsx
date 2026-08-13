@@ -71,6 +71,7 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
   const handleRef = useRef<ScannerHandle | null>(null);
   const [torchOn, setTorchOn] = useState(false);
   const [torchAvailable, setTorchAvailable] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
 
   const [meal, setMeal] = useState(mealId);
   const [name, setName] = useState('');
@@ -85,6 +86,7 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
     handleRef.current = null;
     setTorchOn(false);
     setTorchAvailable(false);
+    setVideoReady(false);
   };
 
   /** Reads the text of a captured frame and fills in whatever it recognised. */
@@ -269,13 +271,24 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
   if (phase === 'camera') {
     return (
       <div className="fixed inset-0 z-50 animate-fade-in bg-black">
+        {/* Hidden until it has frames: an empty <video> paints the WebView's
+            own broken-media glyph while the camera opens. */}
         <video
           ref={videoRef}
-          className="absolute inset-0 size-full object-cover"
+          onLoadedData={() => setVideoReady(true)}
+          className={cx(
+            'absolute inset-0 size-full object-cover transition-opacity duration-300',
+            videoReady ? 'opacity-100' : 'opacity-0',
+          )}
           playsInline
           muted
           autoPlay
         />
+        {!videoReady && (
+          <div className="absolute inset-0 grid place-items-center">
+            <span className="size-9 animate-spin rounded-full border-2 border-white/20 border-t-white/80" />
+          </div>
+        )}
 
         <div className="pointer-events-none absolute inset-0">
           <div

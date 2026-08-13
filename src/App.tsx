@@ -4,6 +4,7 @@ import { useUi, type Tab } from './state/ui';
 import { useTargets } from './state/useTargets';
 import { ensureProfile, readProfile } from './db/repo';
 import { ensureCoreData } from './db/seed';
+import { dismissBoot } from './main';
 import { ToastHost, cx } from './ui/primitives';
 import { IconBody, IconChart, IconFlame, IconMore } from './ui/icons';
 import Today from './screens/Today';
@@ -30,6 +31,12 @@ export default function App() {
   useCoreDataInstall();
   useProfileSeed();
   useMidnightRollover();
+
+  // Hold the launch screen until there is something real to show. Dropping it
+  // on mount would just reveal a screen of skeletons.
+  useEffect(() => {
+    if (derived) dismissBoot();
+  }, [derived]);
 
   const profile = derived?.profile;
   // A brand-new profile still has its factory height and weight, which is the

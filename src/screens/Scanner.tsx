@@ -4,11 +4,11 @@ import { lookupBarcode } from '../search';
 import type { DayKey } from '../core/dates';
 import {
   cameraPermission,
+  hasNativeScannerFallback,
   openAppSettings,
   requestCameraPermission,
   scanFromVideo,
   scanNative,
-  scanSource,
   type ScannerHandle,
 } from '../scan/barcode';
 import { Button, Card, EmptyState, Input, Sheet, cx } from '../ui/primitives';
@@ -42,6 +42,7 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
   const [error, setError] = useState<string>();
   const [torchOn, setTorchOn] = useState(false);
   const [torchAvailable, setTorchAvailable] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
   const [manual, setManual] = useState('');
   const [showManual, setShowManual] = useState(false);
 
@@ -66,13 +67,33 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
     }
   };
 
+  /** ML Kit's own full-screen scanner. Only reached if the WebView has no camera. */
+  const useNativeScanner = async () => {
+    try {
+      const barcode = await scanNative();
+      if (barcode) void resolve(barcode);
+      else closeSheet();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Scanning failed.');
+      setPhase('error');
+    }
+  };
+
   const startCamera = async () => {
     const video = videoRef.current;
     if (!video) return;
+    let failed = false;
     const handle = await scanFromVideo(
       video,
       (barcode) => void resolve(barcode),
       (err) => {
+        failed = true;
+        // Fall through to ML Kit rather than dead-ending: a device that refuses
+        // the camera to the WebView can still scan, just not with our HUD.
+        if (hasNativeScannerFallback()) {
+          void useNativeScanner();
+          return;
+        }
         setError(
           err.name === 'NotAllowedError'
             ? 'Camera access was blocked.'
@@ -81,6 +102,7 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
         setPhase('error');
       },
     );
+    if (failed) return;
     handleRef.current = handle;
     setTorchAvailable(handle.hasTorch());
     setPhase((current) => (current === 'error' ? current : 'scanning'));
@@ -97,19 +119,15 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
       return;
     }
     if (state === 'unavailable') {
+      // No camera exposed to the WebView at all. On a phone that usually means
+      // the WebView is restricted rather than the hardware missing, so ML Kit
+      // is worth trying before giving up.
+      if (hasNativeScannerFallback()) {
+        await useNativeScanner();
+        return;
+      }
       setError('This device has no camera available to the app.');
       setPhase('error');
-      return;
-    }
-    if (scanSource() === 'native') {
-      try {
-        const barcode = await scanNative();
-        if (barcode) void resolve(barcode);
-        else closeSheet();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Scanning failed.');
-        setPhase('error');
-      }
       return;
     }
     await startCamera();
@@ -159,17 +177,29 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
   // reads as a preview thumbnail — people hold the packet too far back and the
   // decode never fires. Every scanner worth copying is edge to edge, with the
   // controls floating over the feed.
-  const live = (phase === 'checking' || phase === 'scanning') && scanSource() !== 'native';
+  const live = phase === 'checking' || phase === 'scanning';
   if (live && !showManual) {
     return (
       <div className="fixed inset-0 z-50 animate-fade-in bg-black">
+        {/* Hidden until it has frames. An empty <video> paints the WebView's own
+            broken-media glyph — a huge grey play button — for the second or so
+            the camera takes to open. */}
         <video
           ref={videoRef}
-          className="absolute inset-0 size-full object-cover"
+          onLoadedData={() => setVideoReady(true)}
+          className={cx(
+            'absolute inset-0 size-full object-cover transition-opacity duration-300',
+            videoReady ? 'opacity-100' : 'opacity-0',
+          )}
           playsInline
           muted
           autoPlay
         />
+        {!videoReady && (
+          <div className="absolute inset-0 grid place-items-center">
+            <span className="size-9 animate-spin rounded-full border-2 border-white/20 border-t-white/80" />
+          </div>
+        )}
 
         {/* Scrim with a genuinely transparent cut-out, built from a huge spread
             box-shadow rather than four overlay panels. */}
@@ -317,7 +347,9 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
           <EmptyState icon={<IconSparkle size={26} />} title="Looking it up…" />
         )}
 
-        {phase === 'checking' && scanSource() === 'native' && (
+        {/* Reached only while ML Kit's own scanner is opening as a fallback;
+            the in-app viewfinder handles `checking` itself. */}
+        {phase === 'checking' && showManual && (
           <EmptyState icon={<IconScan size={26} />} title="Opening the camera…" />
         )}
 

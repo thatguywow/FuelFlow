@@ -408,7 +408,11 @@ export function Sheet({
           </IconButton>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
+        {/* A sheet is a panel, not a document — a scrollbar down its inside
+            edge reads as a browser frame within the app. */}
+        <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          {children}
+        </div>
 
         {footer && (
           <div className="safe-b border-t border-border bg-bg-elevated p-3 shadow-[0_-8px_24px_-12px_rgb(0_0_0/0.4)]">

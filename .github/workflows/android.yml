@@ -80,6 +80,9 @@ jobs:
           # Must run before sync: the camera plugins do not declare CAMERA
           # themselves, so without this the app silently has no camera access.
           node scripts/patch-android-manifest.mjs
+          # The generated theme leaves the navigation bar at the platform
+          # default — a light grey strip with dark icons under a dark app.
+          node scripts/patch-android-theme.mjs
           npx cap sync android
 
       - name: Verify the manifest declares camera access
@@ -90,6 +93,19 @@ jobs:
             exit 1
           }
           echo "CAMERA permission present."
+
+      - name: Verify the system chrome was themed
+        run: |
+          STYLES=android/app/src/main/res/values/styles.xml
+          grep -q 'android:navigationBarColor' "$STYLES" || {
+            echo "::error::navigationBarColor missing from $STYLES — the nav bar will render in the platform default"
+            exit 1
+          }
+          test -f android/app/src/main/res/values-night/styles.xml || {
+            echo "::error::values-night/styles.xml missing — dark mode would keep light system bars"
+            exit 1
+          }
+          echo "System chrome themed."
 
       - name: Assemble debug APK
         run: |

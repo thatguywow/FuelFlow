@@ -156,7 +156,10 @@
      under the safe-area insets. Content flush against the edge is the single
      clearest tell of a web page wearing an app's clothes. */
   --space-safe-t: 1.25rem;
-  --space-safe-b: 0.75rem;
+  /* Android reports no bottom inset to the WebView even though the system
+     navigation bar is right there, so this floor is the only thing keeping a
+     footer button off it. 12px still read as touching. */
+  --space-safe-b: 1.25rem;
 
   --shadow-e1: var(--ff-shadow-1);
   --shadow-e2: var(--ff-shadow-2);
@@ -173,6 +176,27 @@
 @layer base {
   * {
     -webkit-tap-highlight-color: transparent;
+  }
+
+  /*
+   * No scrollbars on touch.
+   *
+   * A phone has no pointer to aim at one, so the track is pure decoration — and
+   * a pale system scrollbar down the edge of a dark app is exactly the kind of
+   * browser furniture that gives away a web view. Kept on fine pointers, where
+   * it is the only affordance telling you the page scrolls at all.
+   */
+  @media (pointer: coarse) {
+    html,
+    body,
+    * {
+      scrollbar-width: none;
+    }
+    ::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+      display: none;
+    }
   }
 
   html {

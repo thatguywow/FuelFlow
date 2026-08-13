@@ -118,10 +118,25 @@ declare global {
 
 const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'itf'];
 
+/**
+ * Which decoder to drive the in-app viewfinder with.
+ *
+ * Native no longer means "hand off to ML Kit's own screen". That screen is
+ * Google's, complete with its four coloured brackets and a "Scanned by Google"
+ * footer, and it replaces the app wholesale — the one moment the product looks
+ * least like itself. The WebView's getUserMedia works on Android (the label
+ * scanner's preview proves it), so the app keeps its own HUD and decodes in
+ * page. `scanNative` remains as the fallback for a device that refuses the
+ * camera to the WebView.
+ */
 export function scanSource(): ScanSource {
-  if (Capacitor.isNativePlatform()) return 'native';
   if (typeof window !== 'undefined' && window.BarcodeDetector) return 'detector';
   return 'zxing';
+}
+
+/** True where ML Kit's own scanner screen is available as a fallback. */
+export function hasNativeScannerFallback(): boolean {
+  return Capacitor.isNativePlatform();
 }
 
 /** Native scan. Opens ML Kit's own full-screen camera UI. */

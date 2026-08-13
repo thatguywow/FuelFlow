@@ -258,7 +258,7 @@ export default function Onboarding() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-6">{steps[step]}</div>
+      <div className="no-scrollbar flex-1 overflow-y-auto px-4 py-6">{steps[step]}</div>
 
       <div className="safe-b flex gap-2 border-t border-border p-4">
         {step > 0 && (
