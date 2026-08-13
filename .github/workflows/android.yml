@@ -94,6 +94,12 @@ jobs:
           }
           echo "CAMERA permission present."
 
+      - name: Validate the generated Android resources
+        # These are inflated before any app code runs, so a mistake here is a
+        # process that dies on launch, not a visual bug. Gradle compiles them
+        # regardless — only a device shows the failure.
+        run: node scripts/check-android-resources.mjs
+
       - name: Verify the system chrome was themed
         run: |
           STYLES=android/app/src/main/res/values/styles.xml

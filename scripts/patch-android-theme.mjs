@@ -117,15 +117,24 @@ writeFileSync(
 `,
 );
 
+// The mark is referenced directly, with an explicit size and gravity.
+//
+// It was wrapped in <bitmap android:src="@drawable/ff_launch_mark"> — and a
+// BitmapDrawable cannot take a vector as its source. Android throws
+// Resources$NotFoundException while inflating the window background, which
+// happens before any of the app's own code runs: the process died on launch
+// with "FuelFlow force closed due to an internal error" and no way to get in.
 writeFileSync(
   path.join(drawableDir, 'ff_launch.xml'),
   `<?xml version="1.0" encoding="utf-8"?>
 <!-- Written by scripts/patch-android-theme.mjs -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/ffSystemChrome" />
-    <item android:gravity="center">
-        <bitmap android:src="@drawable/ff_launch_mark" android:gravity="center" />
-    </item>
+    <item
+        android:drawable="@drawable/ff_launch_mark"
+        android:gravity="center"
+        android:width="96dp"
+        android:height="96dp" />
 </layer-list>
 `,
 );
@@ -244,7 +253,9 @@ const nightStyles = `<?xml version="1.0" encoding="utf-8"?>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowBackground">@color/ffSystemChrome</item>
     </style>
-    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+    <!-- Inherits the theme defined just above rather than naming an androidx
+         parent that may not be on the classpath. -->
+    <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
         <item name="android:background">@drawable/ff_launch</item>
         <item name="android:navigationBarColor">@color/ffSystemChrome</item>
         <item name="android:statusBarColor">@color/ffSystemChrome</item>
