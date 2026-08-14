@@ -458,8 +458,19 @@ export function Sheet({
         </div>
 
         {/* A sheet is a panel, not a document — a scrollbar down its inside
-            edge reads as a browser frame within the app. */}
-        <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            edge reads as a browser frame within the app.
+
+            The bottom inset lives on the footer when there is one, and here
+            when there is not. Without this branch a footerless sheet ends flush
+            against the screen edge and its last control sits underneath the
+            Android navigation bar — which is exactly where Delete ended up in
+            the hold-an-entry menu. */}
+        <div
+          className={cx(
+            'no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain',
+            !footer && 'safe-b',
+          )}
+        >
           {children}
         </div>
 

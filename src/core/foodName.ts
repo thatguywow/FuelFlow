@@ -40,6 +40,19 @@ export function portionStatesItsMass(label: string): boolean {
   return /^[\d.,]+\s*(g|ml|kg|l|oz|lb)$/i.test(label.trim());
 }
 
+/**
+ * A portion that is nothing but an imperial unit.
+ *
+ * USDA ships these on almost every food, and they are unit conversions rather
+ * than servings: nobody eats "an ounce of chicken breast", it is just 28.35 g
+ * spelled differently. On a metric profile they are noise, and worse, they are
+ * often flagged preferred — which is how a metric user opening a chicken breast
+ * was shown "oz · 113 g" as the default instead of 100 g.
+ */
+export function isImperialUnitPortion(label: string): boolean {
+  return /^(oz|fl\.?\s*oz|lb|ounces?|pounds?|fluid ounces?)$/i.test(label.trim());
+}
+
 /** How the food was prepared. These read naturally after a comma. */
 const PREPARATIONS = new Set([
   'raw',

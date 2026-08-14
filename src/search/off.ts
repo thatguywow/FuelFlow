@@ -67,46 +67,75 @@ class TokenBucket {
     this.tokens = capacity;
   }
 
+  private refill(): void {
+    const now = Date.now();
+    this.tokens = Math.min(
+      this.capacity,
+      this.tokens + ((now - this.last) / 60_000) * this.refillPerMinute,
+    );
+    this.last = now;
+  }
+
+  /** Take a token if one is free, without waiting. */
+  tryTake(): boolean {
+    this.refill();
+    if (this.tokens < 1) return false;
+    this.tokens -= 1;
+    return true;
+  }
+
+  /** Wait for a token. Only for lookups the user explicitly asked for. */
   async take(): Promise<void> {
     for (;;) {
-      const now = Date.now();
-      this.tokens = Math.min(
-        this.capacity,
-        this.tokens + ((now - this.last) / 60_000) * this.refillPerMinute,
-      );
-      this.last = now;
-      if (this.tokens >= 1) {
-        this.tokens -= 1;
-        return;
-      }
+      if (this.tryTake()) return;
       const waitMs = ((1 - this.tokens) / this.refillPerMinute) * 60_000;
       await new Promise((resolve) => setTimeout(resolve, Math.min(5_000, Math.max(200, waitMs))));
     }
   }
 }
 
-// Deliberately below the published ceilings: an IP ban would break the app for
-// everyone behind that address, and no user action here needs to be instant.
-const productBucket = new TokenBucket(6, 12);
-const searchBucket = new TokenBucket(3, 6);
+// At the published ceilings rather than under them. The previous figures were
+// half of what Open Food Facts allows, and search in particular was throttled
+// to one request every ten seconds — so the fourth search of a session sat and
+// waited before a single byte moved. Being a good citizen means not exceeding
+// the limit, not making the app feel broken.
+//
+// A barcode scan waits for its token: the user pointed a camera at a specific
+// product and nothing else will do. A search does not — see `searchOnline`.
+const productBucket = new TokenBucket(10, 60);
+const searchBucket = new TokenBucket(5, 10);
 
 // ---------------------------------------------------------------------------
 // Transport
 // ---------------------------------------------------------------------------
 
-async function request<T>(url: string): Promise<T> {
+/**
+ * Every request carries a deadline.
+ *
+ * The browser path had none at all, so a stalled Open Food Facts response left
+ * the search sitting on "searching…" until the socket eventually gave up —
+ * which on a phone changing cells can be a minute or more.
+ */
+async function request<T>(url: string, timeoutMs = 15_000, external?: AbortSignal): Promise<T> {
   if (Capacitor.isNativePlatform()) {
     const response = await CapacitorHttp.get({
       url,
       headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-      readTimeout: 15_000,
-      connectTimeout: 15_000,
+      readTimeout: timeoutMs,
+      connectTimeout: timeoutMs,
     });
     if (response.status >= 400) throw new Error(`Open Food Facts returned ${response.status}`);
     return (typeof response.data === 'string' ? JSON.parse(response.data) : response.data) as T;
   }
 
-  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  const deadline = AbortSignal.timeout(timeoutMs);
+  // `AbortSignal.any` is recent; without it the deadline alone still applies.
+  const signal =
+    external && typeof AbortSignal.any === 'function'
+      ? AbortSignal.any([deadline, external])
+      : deadline;
+
+  const response = await fetch(url, { headers: { Accept: 'application/json' }, signal });
   if (!response.ok) throw new Error(`Open Food Facts returned ${response.status}`);
   return (await response.json()) as T;
 }
@@ -280,14 +309,66 @@ export interface OffSearchOptions {
   limit?: number;
   /** ISO country code to bias results, e.g. "us", "gb". */
   country?: string;
+  signal?: AbortSignal;
+}
+
+/**
+ * Recent online searches, so retyping does not re-request.
+ *
+ * Backspacing one character and typing it again is an ordinary thing to do and
+ * used to cost a full network round trip — and a rate-limit token with it.
+ */
+const RECENT_TTL_MS = 5 * 60_000;
+const RECENT_MAX = 24;
+const recentSearches = new Map<string, { at: number; hits: SearchHit[] }>();
+
+function cached(key: string): SearchHit[] | undefined {
+  const entry = recentSearches.get(key);
+  if (!entry) return undefined;
+  if (Date.now() - entry.at > RECENT_TTL_MS) {
+    recentSearches.delete(key);
+    return undefined;
+  }
+  return entry.hits;
+}
+
+function remember(key: string, hits: SearchHit[]): void {
+  recentSearches.set(key, { at: Date.now(), hits });
+  if (recentSearches.size > RECENT_MAX) {
+    const oldest = recentSearches.keys().next().value;
+    if (oldest !== undefined) recentSearches.delete(oldest);
+  }
+}
+
+/** Thrown when the rate limiter has nothing left, so the caller can say so. */
+export class OffThrottledError extends Error {
+  constructor() {
+    super('Open Food Facts rate limit reached');
+    this.name = 'OffThrottledError';
+  }
 }
 
 export async function searchOnline(query: string, options: OffSearchOptions = {}): Promise<SearchHit[]> {
   const trimmed = query.trim();
   if (trimmed.length < 3) return [];
-  await searchBucket.take();
 
   const limit = options.limit ?? 20;
+  const key = `${trimmed.toLowerCase()}|${limit}|${options.country ?? ''}`;
+  const hit = cached(key);
+  if (hit) return hit;
+
+  /*
+   * A search never waits for a rate-limit token.
+   *
+   * It used to: the bucket refilled at six per minute, so from the fourth
+   * search onwards every one of them slept — up to ten seconds — before the
+   * request was even sent. That is the "insane time to load" on online
+   * results, and it was self-inflicted rather than upstream. There are always
+   * local and snapshot results on screen already, so the honest behaviour when
+   * the budget is spent is to skip this tier and stop claiming to be loading.
+   */
+  if (!searchBucket.tryTake()) throw new OffThrottledError();
+
   const params = new URLSearchParams({
     q: trimmed,
     page_size: String(limit),
@@ -295,15 +376,24 @@ export async function searchOnline(query: string, options: OffSearchOptions = {}
   });
   if (options.country) params.set('countries_tags_en', options.country);
 
+  // Short deadline. This tier is an extra, not the answer — nothing here is
+  // worth making the user watch a spinner for.
+  const BUDGET_MS = 6_000;
+
   let products: OffProduct[] = [];
   try {
     // search-a-licious is the purpose-built full-text service and is far better
     // at ranking than the legacy filter endpoint.
     const data = await request<{ hits?: OffProduct[] }>(
       `${SEARCH_BASE}/search?${params.toString()}${identity()}`,
+      BUDGET_MS,
+      options.signal,
     );
     products = data.hits ?? [];
-  } catch {
+  } catch (error) {
+    // Only retry a service that answered badly. Retrying one that ran out of
+    // time just spends the budget twice over.
+    if (options.signal?.aborted || (error as Error)?.name === 'TimeoutError') throw error;
     const fallback = new URLSearchParams({
       search_terms: trimmed,
       page_size: String(limit),
@@ -312,13 +402,19 @@ export async function searchOnline(query: string, options: OffSearchOptions = {}
     });
     const data = await request<{ products?: OffProduct[] }>(
       `${BASE}/cgi/search.pl?${fallback.toString()}${identity()}`,
+      BUDGET_MS,
+      options.signal,
     );
     products = data.products ?? [];
   }
 
+  // Converted together rather than one after another. Each conversion touches
+  // IndexedDB to resolve and cache the product, and serialising fifteen of them
+  // added the whole round trip again after the network had already finished.
+  const converted = await Promise.all(products.map((product) => toFood(product)));
+
   const hits: SearchHit[] = [];
-  for (const product of products) {
-    const food = await toFood(product);
+  for (const food of converted) {
     if (!food) continue;
     hits.push({
       food,
@@ -329,6 +425,7 @@ export async function searchOnline(query: string, options: OffSearchOptions = {}
       suggestedGrams: food.portions.find((p) => p.preferred)?.grams ?? 100,
     });
   }
+  remember(key, hits);
   return hits;
 }
 

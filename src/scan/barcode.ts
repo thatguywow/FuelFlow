@@ -216,7 +216,7 @@ export async function scanFromVideo(
       return idle;
     }
     video.srcObject = stream;
-    await video.play();
+    await startPlayback(video);
   } catch (error) {
     onError?.(error instanceof Error ? error : new Error('Camera unavailable'));
     return idle;
@@ -295,6 +295,47 @@ export async function recognizeLabelText(): Promise<string[] | null> {
 
   const { blocks } = await TextRecognition.processImage({ path: photo.path });
   return blocks.map((block) => block.text);
+}
+
+/**
+ * A single black pixel, used as the poster on every viewfinder.
+ *
+ * Between mount and the camera handing over its first frame, a `<video>` with
+ * no source is "broken media" as far as the Android WebView is concerned, and
+ * it paints its own placeholder: a grey panel with a large play triangle. That
+ * is the artifact that flashed up every time a scanner opened.
+ *
+ * Fading the element in on `loadeddata` did not suppress it. A media element is
+ * composited on its own layer, and the placeholder is drawn by the WebView
+ * rather than by the page, so it is not reliably subject to the page's opacity.
+ * A poster is: the WebView shows it in place of the placeholder, and one black
+ * pixel stretched over a black screen is nothing at all.
+ */
+export const VIDEO_POSTER =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+/**
+ * Start playback without letting a cancelled play() look like a camera failure.
+ *
+ * `HTMLMediaElement.play()` returns a promise that rejects with AbortError
+ * whenever anything disturbs the element before the first frame — a re-render
+ * that touches it, the element being moved in the tree, a second `play()`. None
+ * of that means the camera is unavailable, but the rejection was propagating
+ * out of `getUserMedia`'s try block and putting the scanner into its hard error
+ * state: "Cannot use the camera — the play() request was interrupted".
+ *
+ * The element also carries `autoplay`, so if this attempt is cancelled the
+ * browser starts the stream itself as soon as it settles. The only failure
+ * worth reporting is one from `getUserMedia`, which has already happened by the
+ * time we get here.
+ */
+async function startPlayback(video: HTMLVideoElement): Promise<void> {
+  try {
+    await video.play();
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError' || (error as Error)?.name === 'NotAllowedError') return;
+    throw error;
+  }
 }
 
 /**
@@ -384,7 +425,7 @@ export async function openCameraPreview(
     audio: false,
   });
   video.srcObject = stream;
-  await video.play();
+  await startPlayback(video);
 
   const track = () => stream.getVideoTracks()[0] ?? null;
   const hasTorch = () => {

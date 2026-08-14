@@ -94,22 +94,54 @@ export async function searchTiered(
 
   onResults({ hits: local, pending: true, skipped: [] });
 
+  /*
+   * Each network tier publishes the moment it lands.
+   *
+   * These used to be joined with `Promise.all`, so nothing appeared until both
+   * had finished — which meant the branded snapshot, answering in a couple of
+   * hundred milliseconds from a handful of range requests, sat waiting on an
+   * Open Food Facts request that might take seconds. The whole point of a
+   * tiered search is that the fast tiers do not queue behind the slow ones,
+   * and that was being thrown away at the last step.
+   */
   const skipped: ('remote' | 'online')[] = [];
-  const [remote, online] = await Promise.all([
-    searchRemote(trimmed, 25).catch(() => {
-      skipped.push('remote');
-      return [] as SearchHit[];
-    }),
-    isOnline()
-      ? searchOnline(trimmed, { limit: 15, country: options.country }).catch(() => {
-          skipped.push('online');
-          return [] as SearchHit[];
-        })
-      : Promise.resolve<SearchHit[]>((skipped.push('online'), [])),
-  ]);
+  let remote: SearchHit[] = [];
+  let online: SearchHit[] = [];
+  let outstanding = 2;
 
-  if (options.signal?.aborted) return;
-  onResults({ hits: merge(trimmed, local, remote, online).slice(0, limit), pending: false, skipped });
+  const publish = () => {
+    if (options.signal?.aborted) return;
+    onResults({
+      hits: merge(trimmed, local, remote, online).slice(0, limit),
+      pending: outstanding > 0,
+      skipped: [...skipped],
+    });
+  };
+
+  const settle = (tier: 'remote' | 'online', results: SearchHit[] | null) => {
+    if (results) {
+      if (tier === 'remote') remote = results;
+      else online = results;
+    } else {
+      skipped.push(tier);
+    }
+    outstanding--;
+    publish();
+  };
+
+  await Promise.all([
+    searchRemote(trimmed, 25).then(
+      (r) => settle('remote', r),
+      () => settle('remote', null),
+    ),
+    (isOnline()
+      ? searchOnline(trimmed, { limit: 15, country: options.country, signal: options.signal })
+      : Promise.reject(new Error('offline'))
+    ).then(
+      (r) => settle('online', r),
+      () => settle('online', null),
+    ),
+  ]);
 }
 
 /** Promise-shaped wrapper for callers that do not want progressive updates. */

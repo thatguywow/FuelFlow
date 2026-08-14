@@ -13,6 +13,7 @@ import {
   recognizeLabelText,
   type ParsedLabel,
   type ScannerHandle,
+  VIDEO_POSTER,
 } from '../scan/barcode';
 import { N } from '../core/nutrients';
 import { formatCount } from '../core/format';
@@ -283,13 +284,14 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
   if (phase === 'camera') {
     return (
       <div className="fixed inset-0 z-50 animate-fade-in bg-black">
-        {/* Hidden until it has frames: an empty <video> paints the WebView's
-            own broken-media glyph while the camera opens. */}
+        {/* The poster is what actually suppresses the WebView's broken-media
+            glyph while the camera opens; see VIDEO_POSTER. */}
         <video
           ref={videoRef}
+          poster={VIDEO_POSTER}
           onLoadedData={() => setVideoReady(true)}
           className={cx(
-            'absolute inset-0 size-full object-cover transition-opacity duration-300',
+            'absolute inset-0 size-full bg-black object-cover transition-opacity duration-300',
             videoReady ? 'opacity-100' : 'opacity-0',
           )}
           playsInline

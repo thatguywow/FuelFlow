@@ -232,10 +232,12 @@ export default function AddFood({ mealId, day }: { mealId: string; day: DayKey }
                         rearranged into what a person would recognise; the
                         cataloguing detail moves to the line beneath. */}
                     <div className="truncate text-[14.5px]">{displayName(hit.food.name).primary}</div>
+                    {/* Brand and amount only. The qualifiers stripped out of
+                        the name are cataloguing detail by construction, so
+                        reprinting them here just moved the noise down a line. */}
                     <div className="mt-0.5 truncate text-[12px] text-faint">
                       {[
                         hit.food.brand,
-                        displayName(hit.food.name).detail,
                         hit.suggestedGrams ? formatFoodMass(hit.suggestedGrams, unitSystem) : null,
                       ]
                         .filter(Boolean)

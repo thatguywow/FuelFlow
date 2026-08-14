@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useUi } from '../state/ui';
 import { useTargets } from '../state/useTargets';
@@ -14,7 +14,7 @@ import {
 import { nutrientStatus } from '../core/dri';
 import { db, type Food } from '../db/schema';
 import { deleteEntry, logFood, toggleFavorite, updateEntryAmount } from '../db/repo';
-import { displayName, portionStatesItsMass, shortPortion } from '../core/foodName';
+import { displayName, isImperialUnitPortion, portionStatesItsMass, shortPortion } from '../core/foodName';
 import { formatFoodMass } from '../core/units';
 import { Button, Card, Divider, Input, Sheet, cx } from '../ui/primitives';
 import { IconChevronDown, IconStar, IconTrash } from '../ui/icons';
@@ -47,26 +47,62 @@ export default function FoodDetail({
   const entry = useLiveQuery(() => (entryId ? db.entries.get(entryId) : undefined), [entryId]);
   const usage = useLiveQuery(() => db.usage.get(food.id), [food.id]);
 
+  const unitSystem = derived?.profile.display.unitSystem ?? 'metric';
+
   const portions = useMemo(() => {
-    const list = [...food.portions];
+    // Bare imperial units are unit conversions rather than servings, and USDA
+    // marks them preferred often enough that a metric profile kept opening on
+    // "oz · 113 g". Dropped entirely on metric — the amount field already
+    // expresses any weight you like.
+    const list = food.portions.filter(
+      (p) => !(unitSystem === 'metric' && isImperialUnitPortion(p.label)),
+    );
     if (!list.some((p) => p.grams === 100)) list.push({ label: '100 g', grams: 100 });
     if (!list.some((p) => p.grams === 1)) list.push({ label: 'gram', grams: 1 });
     return list;
-  }, [food.portions]);
+  }, [food.portions, unitSystem]);
 
-  const initialPortion =
-    portions.findIndex((p) => p.label === entry?.portionLabel) >= 0
-      ? portions.findIndex((p) => p.label === entry?.portionLabel)
-      : Math.max(0, portions.findIndex((p) => p.preferred));
+  /**
+   * Which portion to open on.
+   *
+   * The entry's own portion when editing, then whatever the source marked
+   * preferred, and 100 g as the floor — never simply index 0, which is an
+   * arbitrary row of the upstream measure table.
+   */
+  const defaultPortion = useMemo(() => {
+    const byEntry = portions.findIndex((p) => p.label === entry?.portionLabel);
+    if (byEntry >= 0) return byEntry;
+    const preferred = portions.findIndex((p) => p.preferred);
+    if (preferred >= 0) return preferred;
+    const hundred = portions.findIndex((p) => p.grams === 100);
+    return hundred >= 0 ? hundred : 0;
+  }, [portions, entry?.portionLabel]);
 
-  const [portionIndex, setPortionIndex] = useState(initialPortion);
-  const unitSystem = derived?.profile.display.unitSystem ?? 'metric';
+  const [portionIndex, setPortionIndex] = useState(defaultPortion);
   const [count, setCount] = useState(() => {
-    const portion = portions[initialPortion];
-    if (entry && portion) return round(entry.grams / portion.grams);
+    const portion = portions[defaultPortion];
     if (usage?.typicalGrams && portion) return round(usage.typicalGrams / portion.grams);
     return 1;
   });
+
+  /**
+   * Seed the fields from the entry once it arrives.
+   *
+   * `useLiveQuery` returns undefined on the first render, and a `useState`
+   * initialiser only runs on that render — so opening "Edit amount" showed
+   * 1 x the default portion regardless of what had actually been logged, and
+   * saving silently overwrote the real amount with it.
+   */
+  const seeded = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!entry || seeded.current === entry.id) return;
+    seeded.current = entry.id;
+    const index = portions.findIndex((p) => p.label === entry.portionLabel);
+    const chosen = index >= 0 ? index : defaultPortion;
+    setPortionIndex(chosen);
+    const portion = portions[chosen];
+    if (portion) setCount(round(entry.grams / portion.grams));
+  }, [entry, portions, defaultPortion]);
   const [selectedMeal, setSelectedMeal] = useState(mealId);
   const [showAll, setShowAll] = useState(false);
 
@@ -85,11 +121,12 @@ export default function FoodDetail({
       title={
         <div className="min-w-0">
           <h2 className="truncate text-[17px] font-semibold">{displayName(food.name).primary}</h2>
-          {(food.brand || displayName(food.name).detail) && (
-            <p className="truncate text-[12.5px] text-faint">
-              {[food.brand, displayName(food.name).detail].filter(Boolean).join(' · ')}
-            </p>
-          )}
+          {/* The stripped-out qualifiers are not shown. They are, by the
+              definition that removed them from the name, the parts that mean
+              nothing to a person choosing a food — "broiler or fryers",
+              "meat only" — so printing them underneath put the cataloguing
+              noise back on screen with an extra line of its own. */}
+          {food.brand && <p className="truncate text-[12.5px] text-faint">{food.brand}</p>}
         </div>
       }
       footer={

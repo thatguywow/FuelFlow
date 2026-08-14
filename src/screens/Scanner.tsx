@@ -11,6 +11,7 @@ import {
   scanFromVideo,
   scanNative,
   type ScannerHandle,
+  VIDEO_POSTER,
 } from '../scan/barcode';
 import { Button, Card, EmptyState, Input, Sheet, cx } from '../ui/primitives';
 import { IconScan, IconCheck, IconClose, IconFlash, IconSparkle } from '../ui/icons';
@@ -194,14 +195,15 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
   if (live && !showManual) {
     return (
       <div className="fixed inset-0 z-50 animate-fade-in bg-black">
-        {/* Hidden until it has frames. An empty <video> paints the WebView's own
-            broken-media glyph — a huge grey play button — for the second or so
-            the camera takes to open. */}
+        {/* The poster is what actually suppresses the WebView's broken-media
+            glyph while the camera opens; see VIDEO_POSTER. The fade is still
+            worth keeping so the first frame arrives rather than snapping in. */}
         <video
           ref={videoRef}
+          poster={VIDEO_POSTER}
           onLoadedData={() => setVideoReady(true)}
           className={cx(
-            'absolute inset-0 size-full object-cover transition-opacity duration-300',
+            'absolute inset-0 size-full bg-black object-cover transition-opacity duration-300',
             videoReady ? 'opacity-100' : 'opacity-0',
           )}
           playsInline

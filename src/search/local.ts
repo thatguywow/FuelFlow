@@ -1,5 +1,6 @@
 import { db, normalizeQuery, type Food, type FoodSource } from '../db/schema';
 import { frecencyScore } from '../db/repo';
+import { isImperialUnitPortion } from '../core/foodName';
 import { N } from '../core/nutrients';
 
 /**
@@ -238,7 +239,11 @@ function tierFor(food: Food): SearchHit['tier'] {
 /** Best default amount: what you used last time, else the preferred portion. */
 function suggestGramsSync(food: Food, typicalGrams?: number): number {
   if (typicalGrams && typicalGrams > 0) return typicalGrams;
-  const preferred = food.portions.find((p) => p.preferred) ?? food.portions[0];
+  // Bare imperial units are unit conversions, not servings. USDA marks them
+  // preferred often enough that search rows advertised "113 g" — one ounce —
+  // as the amount for a chicken breast.
+  const usable = food.portions.filter((p) => !isImperialUnitPortion(p.label));
+  const preferred = usable.find((p) => p.preferred) ?? usable.find((p) => p.grams === 100) ?? usable[0];
   return preferred?.grams ?? 100;
 }
 
