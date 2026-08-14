@@ -28,6 +28,7 @@ export type Sheet =
   | { kind: 'water'; day: DayKey }
   | { kind: 'create-food'; barcode?: string; mealId?: string; day?: DayKey }
   | { kind: 'recipe-builder'; recipeId?: string }
+  | { kind: 'my-foods' }
   | { kind: 'settings' }
   | { kind: 'goals' }
   | { kind: 'data' };
@@ -54,6 +55,14 @@ interface UiState {
    * made "back" land on an empty search box.
    */
   foodQuery: string;
+  /**
+   * Which section of the library is open, for the same reason as `foodQuery`:
+   * a sheet is rebuilt from its descriptor, so anything held inside the
+   * component is gone by the time you step back to it. Creating a recipe from
+   * the Recipes tab used to return you to Favourites, with the thing you had
+   * just made nowhere in sight.
+   */
+  librarySection: 'favorites' | 'mine' | 'recipes';
   toasts: Toast[];
   onboardingComplete: boolean;
   /** The central add-menu, which is chrome rather than a sheet. */
@@ -70,6 +79,7 @@ interface UiState {
   /** Return to the sheet this one was opened from, if there was one. */
   backSheet: () => void;
   setFoodQuery: (query: string) => void;
+  setLibrarySection: (section: 'favorites' | 'mine' | 'recipes') => void;
   setAddMenu: (open: boolean) => void;
   toast: (message: string, options?: Omit<Toast, 'id' | 'message'>) => void;
   dismissToast: (id: number) => void;
@@ -85,6 +95,7 @@ export const useUi = create<UiState>((set, get) => ({
   sheet: { kind: 'none' },
   sheetHistory: [],
   foodQuery: '',
+  librarySection: 'favorites',
   toasts: [],
   onboardingComplete: false,
   addMenuOpen: false,
@@ -132,6 +143,7 @@ export const useUi = create<UiState>((set, get) => ({
   closeSheet: () => set({ sheet: { kind: 'none' }, sheetHistory: [], foodQuery: '' }),
 
   setFoodQuery: (foodQuery) => set({ foodQuery }),
+  setLibrarySection: (librarySection) => set({ librarySection }),
 
   /** Step back one sheet, or dismiss if this is the only one. */
   backSheet: () =>

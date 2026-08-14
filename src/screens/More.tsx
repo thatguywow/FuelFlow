@@ -47,6 +47,26 @@ export default function More() {
       </section>
 
       <section>
+        <SectionLabel>Library</SectionLabel>
+        <Card padded={false} className="overflow-hidden">
+          {/* Favouriting used to move a food up the search ranking and nothing
+              more, which left "where does it save to" with no answer. This is
+              the answer. */}
+          <Row
+            title="Your foods"
+            detail="Favourites, custom foods and recipes"
+            onClick={() => openSheet({ kind: 'my-foods' })}
+          />
+          <Divider className="ml-4" />
+          <Row
+            title="Create a recipe"
+            detail="Build a dish from ingredients and log it by the serving"
+            onClick={() => openSheet({ kind: 'recipe-builder' })}
+          />
+        </Card>
+      </section>
+
+      <section>
         <SectionLabel>Display</SectionLabel>
         <Card className="space-y-4">
           <Field label="Theme">

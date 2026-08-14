@@ -40,6 +40,7 @@ export default function FoodDetail({
   // Dismissing this sheet returns to whatever opened it — usually the search
   // results — so picking a second food does not mean starting the search again.
   const backSheet = useUi((s) => s.backSheet);
+  const openSheet = useUi((s) => s.openSheet);
   const toast = useUi((s) => s.toast);
   const derived = useTargets();
 
@@ -214,7 +215,12 @@ export default function FoodDetail({
             <button
               onClick={async () => {
                 const favorite = await toggleFavorite(food.id);
-                toast(favorite ? 'Added to favourites' : 'Removed from favourites');
+                // Naming the destination, because the old message did not and
+                // the honest answer at the time was that there wasn't one.
+                toast(
+                  favorite ? 'Favourited — More › Your foods' : 'Removed from favourites',
+                  favorite ? { action: { label: 'Open', run: () => openSheet({ kind: 'my-foods' }) } } : undefined,
+                );
               }}
               className={cx(
                 'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] transition-colors',

@@ -5,7 +5,7 @@ import { searchTiered, suggestionsForMeal, type SearchHit } from '../search';
 import type { DayKey } from '../core/dates';
 import { N } from '../core/nutrients';
 import { Button, EmptyState, Input, List, SectionLabel, Segmented, Sheet, cx } from '../ui/primitives';
-import { IconPlus, IconSearch } from '../ui/icons';
+import { IconBook, IconPlus, IconSearch } from '../ui/icons';
 import { formatCount } from '../core/format';
 import { displayName } from '../core/foodName';
 import { formatFoodMass } from '../core/units';
@@ -140,15 +140,24 @@ export default function AddFood({ mealId, day }: { mealId: string; day: DayKey }
       footer={
         // Scanning and describing a meal now live in the central add menu, so
         // repeating them here was just noise. What is genuinely missing at this
-        // point is the food you searched for and could not find.
-        <Button
-          variant="secondary"
-          full
-          onClick={() => openSheet({ kind: 'create-food', mealId, day })}
-        >
-          <IconPlus size={17} />
-          Create a custom food
-        </Button>
+        // point is the food you searched for and could not find — and under the
+        // Recipes tab, that is a recipe, which until now there was no way to
+        // make at all.
+        filter === 'recipes' ? (
+          <Button variant="secondary" full onClick={() => openSheet({ kind: 'recipe-builder' })}>
+            <IconPlus size={17} />
+            Create a recipe
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            full
+            onClick={() => openSheet({ kind: 'create-food', mealId, day })}
+          >
+            <IconPlus size={17} />
+            Create a custom food
+          </Button>
+        )
       }
     >
       <div className="sticky top-0 z-10 bg-bg-elevated px-4 py-2.5">
@@ -163,19 +172,35 @@ export default function AddFood({ mealId, day }: { mealId: string; day: DayKey }
         />
       </div>
 
-      {grouped.length === 0 && !pending && (
+      {/* An empty Recipes tab said "start typing", which was doubly wrong: there
+          was nothing to find, and no way to make anything. Each tab now
+          explains its own emptiness and offers the way out of it. */}
+      {grouped.length === 0 && !pending && filter === 'recipes' && (
+        <EmptyState
+          icon={<IconBook size={30} />}
+          title={query ? 'No recipe matches that' : 'No recipes yet'}
+          detail="A recipe is a dish built from its ingredients: save it once and log it by the serving, on any day."
+          action={
+            <Button onClick={() => openSheet({ kind: 'recipe-builder' })}>Create a recipe</Button>
+          }
+        />
+      )}
+
+      {grouped.length === 0 && !pending && filter !== 'recipes' && (
         <EmptyState
           icon={<IconSearch size={30} />}
-          title={query ? 'Nothing found' : 'Start typing'}
+          title={query ? 'Nothing found' : filter === 'mine' ? 'Nothing of your own yet' : 'Start typing'}
           detail={
             query
               ? 'Try fewer words, or add it as a custom food so it is there next time.'
-              : 'Foods you log show up here automatically, ranked by how often and how recently you eat them.'
+              : filter === 'mine'
+                ? 'Foods you create by hand, and anything built from a scanned label, live here.'
+                : 'Foods you log show up here automatically, ranked by how often and how recently you eat them.'
           }
           action={
-            query ? (
+            query || filter === 'mine' ? (
               <Button onClick={() => openSheet({ kind: 'create-food', mealId, day })}>
-                Create "{query.slice(0, 24)}"
+                {query ? `Create "${query.slice(0, 24)}"` : 'Create a custom food'}
               </Button>
             ) : undefined
           }

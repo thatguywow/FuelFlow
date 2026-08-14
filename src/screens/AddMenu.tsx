@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useUi } from '../state/ui';
 import { useTargets } from '../state/useTargets';
+import { nearestMeal } from '../core/profile';
 import { cx } from '../ui/primitives';
 import { tapFeedback } from '../ui/motion';
 import { IconBolt, IconCompose, IconLabel, IconPlus, IconScan, IconSearch } from '../ui/icons';
@@ -25,21 +26,6 @@ interface Action {
   run: () => void;
 }
 
-/** Nearest meal to the current time, so the sheet opens on the likely one. */
-function currentMeal(meals: { id: string; defaultTime: number }[]): string {
-  const now = new Date().getHours() * 60 + new Date().getMinutes();
-  let best = meals[0];
-  let bestDistance = Infinity;
-  for (const meal of meals) {
-    const distance = Math.abs(meal.defaultTime - now);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = meal;
-    }
-  }
-  return best?.id ?? 'snacks';
-}
-
 export default function AddMenu() {
   const open = useUi((s) => s.addMenuOpen);
   const setOpen = useUi((s) => s.setAddMenu);
@@ -56,7 +42,7 @@ export default function AddMenu() {
     return () => document.removeEventListener('keydown', onKey);
   }, [open, setOpen]);
 
-  const mealId = derived ? currentMeal(derived.profile.meals) : 'snacks';
+  const mealId = derived ? nearestMeal(derived.profile.meals) : 'snacks';
 
   const actions: Action[] = [
     {

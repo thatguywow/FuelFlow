@@ -94,6 +94,26 @@ export const DEFAULT_MEALS: MealSlot[] = [
   { id: 'snacks', name: 'Snacks', defaultTime: 16 * 60 },
 ];
 
+/**
+ * The meal a log started now most likely belongs to.
+ *
+ * Every entry point that opens a food without being told which meal to use
+ * needs this answer, and they should all give the same one.
+ */
+export function nearestMeal(meals: MealSlot[], at: Date = new Date()): string {
+  const minutes = at.getHours() * 60 + at.getMinutes();
+  let best = meals[0];
+  let bestDistance = Infinity;
+  for (const meal of meals) {
+    const distance = Math.abs(meal.defaultTime - minutes);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = meal;
+    }
+  }
+  return best?.id ?? 'snacks';
+}
+
 export interface UserProfile {
   id: 'me';
   createdAt: number;
