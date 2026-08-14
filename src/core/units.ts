@@ -85,6 +85,34 @@ export interface Measure {
   ml?: number;
 }
 
+export const GRAMS_PER_OZ = 28.349523125;
+
+/**
+ * A food weight, in the system the user chose.
+ *
+ * Switching to imperial changed the body-weight readout and nothing else: every
+ * food amount, portion and total stayed in grams, so for anyone who thinks in
+ * ounces the setting appeared to do nothing at all.
+ *
+ * Grams are kept as the storage unit throughout — converting on the way in
+ * would bake a rounding error into every entry — so this is display only.
+ */
+export function formatFoodMass(grams: number, system: UnitSystem = 'metric'): string {
+  if (system === 'metric') {
+    if (grams >= 1000) return `${(grams / 1000).toFixed(grams % 1000 === 0 ? 0 : 2)} kg`;
+    return `${Math.round(grams)} g`;
+  }
+
+  const oz = grams / GRAMS_PER_OZ;
+  // Past a pound, pounds are how anyone would say it.
+  if (oz >= 16) {
+    const lb = oz / 16;
+    return `${lb.toFixed(lb >= 10 ? 1 : 2)} lb`;
+  }
+  // Below an ounce the figure is small enough that a decimal matters.
+  return `${oz.toFixed(oz < 1 ? 2 : 1)} oz`;
+}
+
 export const COMMON_MEASURES: readonly Measure[] = [
   { label: 'g', grams: 1 },
   { label: 'oz', grams: 28.349523125 },

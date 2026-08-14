@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useUi } from '../state/ui';
+import { useTargets } from '../state/useTargets';
 import { searchTiered, suggestionsForMeal, type SearchHit } from '../search';
 import type { DayKey } from '../core/dates';
 import { N } from '../core/nutrients';
@@ -7,6 +8,7 @@ import { Button, EmptyState, Input, List, SectionLabel, Segmented, Sheet, cx } f
 import { IconPlus, IconSearch } from '../ui/icons';
 import { formatCount } from '../core/format';
 import { displayName } from '../core/foodName';
+import { formatFoodMass } from '../core/units';
 import type { FoodSource } from '../db/schema';
 
 /** Provenance colours for the leading dot on each result. */
@@ -50,6 +52,7 @@ export default function AddFood({ mealId, day }: { mealId: string; day: DayKey }
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [pending, setPending] = useState(false);
   const [suggestions, setSuggestions] = useState<SearchHit[]>([]);
+  const unitSystem = useTargets()?.profile.display.unitSystem ?? 'metric';
   const inputRef = useRef<HTMLInputElement>(null);
 
   // No autofocus. Raising the keyboard unasked covers half the screen — often
@@ -208,7 +211,7 @@ export default function AddFood({ mealId, day }: { mealId: string; day: DayKey }
                       {[
                         hit.food.brand,
                         displayName(hit.food.name).detail,
-                        hit.suggestedGrams ? `${Math.round(hit.suggestedGrams)} g` : null,
+                        hit.suggestedGrams ? formatFoodMass(hit.suggestedGrams, unitSystem) : null,
                       ]
                         .filter(Boolean)
                         .join(' · ')}

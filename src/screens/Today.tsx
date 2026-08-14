@@ -14,7 +14,7 @@ import { tapFeedback, useAnimatedNumber, useStagger } from '../ui/motion';
 import { useSwipe } from '../ui/gestures';
 import { formatCount } from '../core/format';
 import { displayName } from '../core/foodName';
-import { formatVolume } from '../core/units';
+import { formatFoodMass, formatVolume, type UnitSystem } from '../core/units';
 import {
   IconApple,
   IconBolt,
@@ -373,6 +373,7 @@ function EntryRow({
 }) {
   const openSheet = useUi((s) => s.openSheet);
   const toast = useUi((s) => s.toast);
+  const unitSystem = useTargets()?.profile.display.unitSystem ?? 'metric';
   const shown = useStagger(index, 35);
 
   return (
@@ -394,7 +395,7 @@ function EntryRow({
           <div className="truncate text-[15px]">{displayName(entry.name).primary}</div>
           <div className="mt-0.5 truncate text-[12.5px] text-faint">
             {entry.brand ? `${entry.brand} · ` : ''}
-            {amountLabel(entry)}
+            {amountLabel(entry, unitSystem)}
           </div>
         </button>
 
@@ -486,10 +487,10 @@ function WaterRow({ day, ml, targetMl }: { day: DayKey; ml: number; targetMl: nu
  * replaced by the total. A household measure does — "2 cups" is how someone
  * thinks about it — so the count, the measure and the weight are all kept.
  */
-function amountLabel(entry: DiaryEntry): string {
+function amountLabel(entry: DiaryEntry, unitSystem: UnitSystem): string {
   if (entry.quickAdd) return 'Quick add';
 
-  const grams = `${Math.round(entry.grams)} g`;
+  const grams = formatFoodMass(entry.grams, unitSystem);
   const label = entry.portionLabel?.trim();
   if (!label) return grams;
 

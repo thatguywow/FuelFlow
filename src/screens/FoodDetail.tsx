@@ -15,8 +15,9 @@ import { nutrientStatus } from '../core/dri';
 import { db, type Food } from '../db/schema';
 import { deleteEntry, logFood, toggleFavorite, updateEntryAmount } from '../db/repo';
 import { displayName } from '../core/foodName';
+import { formatFoodMass } from '../core/units';
 import { Button, Card, Divider, Input, Sheet, cx } from '../ui/primitives';
-import { IconStar, IconTrash } from '../ui/icons';
+import { IconChevronDown, IconStar, IconTrash } from '../ui/icons';
 
 /**
  * Portion picker and nutrition panel.
@@ -58,6 +59,8 @@ export default function FoodDetail({
       : Math.max(0, portions.findIndex((p) => p.preferred));
 
   const [portionIndex, setPortionIndex] = useState(initialPortion);
+  const [portionOpen, setPortionOpen] = useState(false);
+  const unitSystem = derived?.profile.display.unitSystem ?? 'metric';
   const [count, setCount] = useState(() => {
     const portion = portions[initialPortion];
     if (entry && portion) return round(entry.grams / portion.grams);
@@ -144,29 +147,71 @@ export default function FoodDetail({
               className="w-24 text-center text-[17px] font-semibold"
               aria-label="Amount"
             />
-            {/* Room reserved on the right for the platform's dropdown arrow,
-                which is drawn over the select's own box and otherwise sits on
-                top of the portion text.
+            {/*
+              A button and a list, not a <select>.
 
-                No `truncate` here: on the Android WebView, `text-overflow` on a
-                <select> blanks the selected option entirely rather than
-                ellipsising it — the control rendered empty. */}
-            <select
-              value={portionIndex}
-              onChange={(event) => setPortionIndex(Number(event.target.value))}
-              className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface-2 pl-3 pr-9 text-[15px] text-text focus:border-brand focus:outline-none"
-              aria-label="Portion"
+              The native control rendered as an empty box with an arrow on the
+              Android WebView while showing its text correctly in every desktop
+              browser, so the fault could not be reproduced — or a fix verified
+              — anywhere the app is actually testable. Two attempts at patching
+              its CSS shipped without fixing it. Drawing the control ourselves
+              removes the platform from the question entirely, and it now
+              matches the rest of the app instead of the OS.
+            */}
+            <button
+              type="button"
+              onClick={() => setPortionOpen((open) => !open)}
+              aria-haspopup="listbox"
+              aria-expanded={portionOpen}
+              className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-surface-2 pl-3 pr-2.5 text-left text-[15px] text-text transition-colors hover:border-border-strong"
             >
-              {portions.map((p, index) => (
-                <option key={`${p.label}-${index}`} value={index}>
-                  {p.label} · {formatGrams(p.grams)}
-                </option>
-              ))}
-            </select>
+              <span className="min-w-0 flex-1 truncate">
+                {portion.label} · {formatFoodMass(portion.grams, unitSystem)}
+              </span>
+              <IconChevronDown
+                size={18}
+                className={cx(
+                  'shrink-0 text-faint transition-transform duration-200',
+                  portionOpen && 'rotate-180',
+                )}
+              />
+            </button>
           </div>
 
+          {portionOpen && (
+            <div
+              role="listbox"
+              aria-label="Portion"
+              className="no-scrollbar max-h-56 overflow-y-auto rounded-xl border border-border bg-surface-2"
+            >
+              {portions.map((p, index) => (
+                <button
+                  key={`${p.label}-${index}`}
+                  role="option"
+                  aria-selected={index === portionIndex}
+                  onClick={() => {
+                    setPortionIndex(index);
+                    setPortionOpen(false);
+                  }}
+                  className={cx(
+                    'flex w-full items-center gap-2 px-3 py-2.5 text-left text-[14.5px] transition-colors',
+                    index > 0 && 'border-t border-border',
+                    index === portionIndex ? 'bg-brand-soft text-brand' : 'hover:bg-surface-3',
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">{p.label}</span>
+                  <span className="shrink-0 text-[13px] text-faint tnum">
+                    {formatFoodMass(p.grams, unitSystem)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
-            <span className="text-[13px] text-faint tnum">{formatGrams(grams)} total</span>
+            <span className="text-[13px] text-faint tnum">
+              {formatFoodMass(grams, unitSystem)} total
+            </span>
             <button
               onClick={async () => {
                 const favorite = await toggleFavorite(food.id);
@@ -306,11 +351,9 @@ function sourceLabel(food: Food): string {
   }
 }
 
-function formatGrams(grams: number): string {
-  if (grams >= 1000) return `${(grams / 1000).toFixed(2).replace(/\.?0+$/, '')} kg`;
-  if (grams < 10) return `${round(grams)} g`;
-  return `${Math.round(grams)} g`;
-}
+// formatGrams lived here and was metric-only, which is part of why switching to
+// imperial changed the body weight and nothing else. Replaced by formatFoodMass
+// in core/units, which every food weight now goes through.
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
