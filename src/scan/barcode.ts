@@ -324,7 +324,9 @@ export function captureFrame(video: HTMLVideoElement, maxWidth = 1440): string |
  * and deleted immediately afterwards — the photograph of your food never
  * outlives the read, and nothing leaves the device either way.
  */
-export async function recognizeLabelFromDataUrl(dataUrl: string): Promise<string[] | null> {
+export async function recognizeLabelFromDataUrl(
+  dataUrl: string,
+): Promise<{ lines: PositionedLine[]; text: string[] } | null> {
   if (!Capacitor.isNativePlatform()) return null;
   const { TextRecognition } = await import('@capacitor-mlkit/text-recognition');
   const { Filesystem, Directory } = await import('@capacitor/filesystem');
@@ -338,7 +340,30 @@ export async function recognizeLabelFromDataUrl(dataUrl: string): Promise<string
   });
   try {
     const { blocks } = await TextRecognition.processImage({ path: written.uri });
-    return blocks.map((block) => block.text);
+
+    // Positions are kept, not discarded. A nutrition panel is a two-column
+    // table and ML Kit hands back the two columns as separate blocks, so the
+    // only way to know which figure belongs to which nutrient is where each
+    // one sat on the packet.
+    const lines: PositionedLine[] = [];
+    for (const block of blocks) {
+      for (const line of block.lines ?? []) {
+        const points = (line as { cornerPoints?: number[][] }).cornerPoints;
+        if (!points || points.length === 0) continue;
+        const ys = points.map((p) => p[1] ?? 0);
+        const xs = points.map((p) => p[0] ?? 0);
+        const top = Math.min(...ys);
+        const bottom = Math.max(...ys);
+        lines.push({
+          text: line.text,
+          y: (top + bottom) / 2,
+          x: Math.min(...xs),
+          height: Math.max(1, bottom - top),
+        });
+      }
+    }
+
+    return { lines, text: blocks.map((block) => block.text) };
   } finally {
     await Filesystem.deleteFile({ path: name, directory: Directory.Cache }).catch(() => {});
   }
@@ -500,6 +525,126 @@ function readEnergyKcal(text: string): number | undefined {
   if (kj?.[1]) return toNumber(kj[1]) / 4.184;
 
   return undefined;
+}
+
+/** One recognised line, with where it sat on the packet. */
+export interface PositionedLine {
+  text: string;
+  /** Vertical centre, in image pixels. */
+  y: number;
+  /** Left edge, in image pixels. */
+  x: number;
+  height: number;
+}
+
+/**
+ * Reads a nutrition table using where the text actually sits.
+ *
+ * A nutrition panel is a two-column table, and OCR does not return it as one:
+ * ML Kit groups the label column and the figures column into separate blocks,
+ * so flattening to text puts every name first and every number last —
+ *
+ *     Λιπαρά/Fat
+ *     εκ των οποίων Κορεσμένα/of which Saturates
+ *     Πρωτεΐνες/Protein
+ *     1g
+ *     20g
+ *     20g
+ *     3g
+ *
+ * A pattern that expects the number beside its label cannot match any of that,
+ * which is why a perfectly legible packet yielded only the energy line: the
+ * energy figure is the one that happens to sit inline.
+ *
+ * Pairing by vertical position instead reconstructs the rows, and the order the
+ * blocks arrived in stops mattering.
+ */
+export function parseLabelLines(lines: PositionedLine[]): ParsedLabel {
+  const out: ParsedLabel = {};
+  if (lines.length === 0) return out;
+
+  const strip = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+  // Tokens that are a measurement and nothing else — the figures column.
+  // `[g9]` because OCR reads a lone "0g" as "09" often enough to matter, and a
+  // bare digit pair is never a nutrient value in its own right.
+  const VALUE = /^([\d.,]+)\s*(mg|kcal|kj|[g9])\b/i;
+
+  const values = lines
+    .map((line) => {
+      const match = VALUE.exec(line.text.trim());
+      if (!match) return null;
+      const unit = match[2]!.toLowerCase() === '9' ? 'g' : match[2]!.toLowerCase();
+      return { ...line, value: Number(match[1]!.replace(',', '.')), unit };
+    })
+    .filter((v): v is NonNullable<typeof v> => v !== null && Number.isFinite(v.value));
+
+  if (values.length === 0) return out;
+
+  /** The measurement sharing a row with this label, if there is one. */
+  const valueFor = (label: PositionedLine, unit: 'g' | 'mg') => {
+    let best: (typeof values)[number] | undefined;
+    let bestDistance = Infinity;
+    for (const candidate of values) {
+      if (candidate.unit !== unit) continue;
+      // A row, not a coincidence: within roughly one line height, and to the
+      // right of the label rather than above or below it in another column.
+      const distance = Math.abs(candidate.y - label.y);
+      if (distance > Math.max(label.height, candidate.height) * 0.9) continue;
+      if (candidate.x < label.x) continue;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = candidate;
+      }
+    }
+    return best?.value;
+  };
+
+  const findLabel = (words: string[]) =>
+    lines.find((line) => {
+      const text = strip(line.text);
+      return words.some((word) => text.includes(strip(word)));
+    });
+
+  for (const [key, words] of Object.entries(NUTRIENT_WORDS) as [
+    keyof typeof NUTRIENT_WORDS,
+    string[],
+  ][]) {
+    const label = findLabel(words);
+    if (!label) continue;
+    const value = valueFor(label, 'g');
+    if (value !== undefined) out[key as keyof ParsedLabel] = value;
+  }
+
+  // Energy is the one row that usually carries both units — "1080kJ / 260kcal"
+  // — and often prints them inline with the label rather than in the figures
+  // column. Read the inline form first, then the column, kcal ahead of kJ.
+  const energyLabel = findLabel(['energy', 'energie', 'energia', 'ενεργ', 'calories']);
+  if (energyLabel) {
+    // Everything printed on the energy row, label and figures together. The
+    // kcal figure is frequently the *second* number in a cell — "1080kJ /
+    // 260kcal" — so reading only the start of each line converted the
+    // kilojoules and threw the exact number away.
+    const row = lines
+      .filter((line) => Math.abs(line.y - energyLabel.y) <= energyLabel.height)
+      .map((line) => line.text)
+      .join(' ');
+
+    const kcal = /(\d+(?:[.,]\d+)?)\s*kcal/i.exec(row);
+    const kj = /(\d+(?:[.,]\d+)?)\s*kj/i.exec(row);
+
+    if (kcal?.[1]) out.kcal = Number(kcal[1].replace(',', '.'));
+    else if (kj?.[1]) out.kcal = Number(kj[1].replace(',', '.')) / 4.184;
+  }
+
+  // Salt is the European convention; sodium is what the app stores.
+  const saltLabel = findLabel(['salt', 'sel', 'sale', 'zout', 'αλατι']);
+  if (saltLabel && out.sodiumMg === undefined) {
+    const salt = valueFor(saltLabel, 'g');
+    if (salt !== undefined) out.sodiumMg = salt * 400;
+  }
+
+  return out;
 }
 
 /**

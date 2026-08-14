@@ -7,6 +7,7 @@ import {
   captureFrame,
   openAppSettings,
   openCameraPreview,
+  parseLabelLines,
   parseNutritionLabel,
   recognizeLabelFromDataUrl,
   recognizeLabelText,
@@ -89,18 +90,29 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
     setVideoReady(false);
   };
 
+  /** Drops absent keys so a spread cannot overwrite a fallback with undefined. */
+  const stripUndefined = <T extends object>(value: T): Partial<T> =>
+    Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Partial<T>;
+
   /** Reads the text of a captured frame and fills in whatever it recognised. */
   const readFrame = async (dataUrl: string) => {
     setPhase('reading');
     setError(undefined);
     try {
-      const text = await recognizeLabelFromDataUrl(dataUrl);
-      if (!text || text.length === 0) {
+      const result = await recognizeLabelFromDataUrl(dataUrl);
+      if (!result || result.text.length === 0) {
         setPhase('form');
         return;
       }
-      setLines(text);
-      applyParsed(parseNutritionLabel(text));
+      setLines(result.text);
+
+      // Positions first: a nutrition panel is a two-column table and the plain
+      // text loses which figure belongs to which row. The flat parser stays as
+      // the fallback for a recogniser that returns no geometry, and fills in
+      // anything the spatial pass could not pair up.
+      const spatial = parseLabelLines(result.lines);
+      const flat = parseNutritionLabel(result.text);
+      applyParsed({ ...flat, ...stripUndefined(spatial) });
       setPhase('form');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not read the label.');
