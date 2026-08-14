@@ -16,6 +16,7 @@ import { db, type Food } from '../db/schema';
 import { deleteEntry, logFood, toggleFavorite, updateEntryAmount } from '../db/repo';
 import { displayName, isImperialUnitPortion, portionStatesItsMass, shortPortion } from '../core/foodName';
 import { formatFoodMass } from '../core/units';
+import { hydrateFood } from '../search';
 import { Button, Card, Divider, Input, Sheet, cx } from '../ui/primitives';
 import { IconChevronDown, IconStar, IconTrash } from '../ui/icons';
 
@@ -47,6 +48,18 @@ export default function FoodDetail({
   const entry = useLiveQuery(() => (entryId ? db.entries.get(entryId) : undefined), [entryId]);
   const usage = useLiveQuery(() => db.usage.get(food.id), [food.id]);
 
+  /**
+   * Search results are a thin projection: names and macros, no serving sizes
+   * and no micronutrients. The full record is fetched for the one product
+   * actually opened, and the panel re-reads it from the database when it lands
+   * — so the sheet fills in rather than opening on a stub.
+   */
+  const stored = useLiveQuery(() => db.foods.get(food.id), [food.id]);
+  useEffect(() => {
+    void hydrateFood(food).catch(() => undefined);
+  }, [food]);
+  const shown = stored ?? food;
+
   const unitSystem = derived?.profile.display.unitSystem ?? 'metric';
 
   const portions = useMemo(() => {
@@ -54,13 +67,13 @@ export default function FoodDetail({
     // marks them preferred often enough that a metric profile kept opening on
     // "oz · 113 g". Dropped entirely on metric — the amount field already
     // expresses any weight you like.
-    const list = food.portions.filter(
+    const list = shown.portions.filter(
       (p) => !(unitSystem === 'metric' && isImperialUnitPortion(p.label)),
     );
     if (!list.some((p) => p.grams === 100)) list.push({ label: '100 g', grams: 100 });
     if (!list.some((p) => p.grams === 1)) list.push({ label: 'gram', grams: 1 });
     return list;
-  }, [food.portions, unitSystem]);
+  }, [shown.portions, unitSystem]);
 
   /**
    * Which portion to open on.
@@ -108,7 +121,7 @@ export default function FoodDetail({
 
   const portion = portions[portionIndex] ?? portions[0]!;
   const grams = Math.max(0, count * portion.grams);
-  const scaled = scaleNutrients(food.per100g, grams);
+  const scaled = scaleNutrients(shown.per100g, grams);
 
   const groups: NutrientGroup[] = showAll
     ? ['energy', 'macro', 'lipid', 'mineral', 'vitamin', 'amino', 'other']
@@ -120,13 +133,13 @@ export default function FoodDetail({
       onClose={backSheet}
       title={
         <div className="min-w-0">
-          <h2 className="truncate text-[17px] font-semibold">{displayName(food.name).primary}</h2>
+          <h2 className="truncate text-[17px] font-semibold">{displayName(shown.name).primary}</h2>
           {/* The stripped-out qualifiers are not shown. They are, by the
               definition that removed them from the name, the parts that mean
               nothing to a person choosing a food — "broiler or fryers",
               "meat only" — so printing them underneath put the cataloguing
               noise back on screen with an extra line of its own. */}
-          {food.brand && <p className="truncate text-[12.5px] text-faint">{food.brand}</p>}
+          {shown.brand && <p className="truncate text-[12.5px] text-faint">{shown.brand}</p>}
         </div>
       }
       footer={
@@ -153,14 +166,14 @@ export default function FoodDetail({
                 toast('Entry updated');
               } else {
                 await logFood({
-                  food,
+                  food: shown,
                   day,
                   mealId: selectedMeal,
                   grams,
                   portionLabel: portion.label,
                   portionCount: count,
                 });
-                toast(`${food.name} added`);
+                toast(`${displayName(shown.name).primary} added`);
               }
               closeSheet();
             }}
@@ -369,7 +382,7 @@ export default function FoodDetail({
         </Card>
 
         <p className="px-1 text-center text-[11.5px] leading-relaxed text-faint">
-          {sourceLabel(food)}
+          {sourceLabel(shown)}
         </p>
       </div>
     </Sheet>

@@ -33,8 +33,36 @@ const USER_AGENT = `${APP_NAME}/${APP_VERSION} (${CONTACT})`;
 const BASE = 'https://world.openfoodfacts.org';
 const SEARCH_BASE = 'https://search.openfoodfacts.org';
 
-/** Fields requested explicitly — the full product document is enormous. */
-const FIELDS = [
+/**
+ * Fields requested explicitly — the full product document is enormous.
+ *
+ * Two projections, because a search and an open are different questions.
+ *
+ * A search needs enough to rank a hundred candidates and draw twenty rows:
+ * names, brand, energy and macros, and the two ranking signals. It does not
+ * need serving sizes or the micronutrient tail, and Search-a-licious does not
+ * index those anyway — asking for them costs payload and returns nothing.
+ *
+ * Opening one product is where the full record is worth fetching, once.
+ */
+const SEARCH_FIELDS = [
+  'code',
+  'product_name',
+  'product_name_en',
+  'generic_name',
+  'brands',
+  'categories',
+  'quantity',
+  'nutriments',
+  'completeness',
+  // How often this product is actually looked up. The single best available
+  // signal for "is this the thing people mean", and far more useful than
+  // `completeness`, which only says how filled-in the record is.
+  'popularity_key',
+  'countries_tags',
+].join(',');
+
+const PRODUCT_FIELDS = [
   'code',
   'product_name',
   'product_name_en',
@@ -51,6 +79,17 @@ const FIELDS = [
   'image_front_small_url',
   'countries_tags',
 ].join(',');
+
+/**
+ * Candidates pulled before ranking, against rows actually shown.
+ *
+ * A single page of relevance-ordered hits buries popular, well-maintained
+ * products under near-duplicates and half-filled entries. Fetching a wider
+ * pool and re-ranking it locally is what makes the ordering better than the
+ * API's own — and with the thin projection above, a hundred rows is a smaller
+ * response than fifteen used to be.
+ */
+const CANDIDATE_POOL = 100;
 
 // ---------------------------------------------------------------------------
 // Rate limiting
@@ -209,6 +248,9 @@ interface OffProduct {
   nova_group?: number;
   nutriscore_grade?: string;
   image_front_small_url?: string;
+  /** How often the product is looked up. The ranking signal that matters. */
+  popularity_key?: number | string;
+  countries_tags?: string[];
 }
 
 function num(value: unknown): number | undefined {
@@ -275,7 +317,11 @@ function bestName(product: OffProduct): string {
   );
 }
 
-async function toFood(product: OffProduct): Promise<Food | null> {
+/**
+ * `detailed` marks a record that came from the full product endpoint. Search
+ * results are a thin projection and must never overwrite one.
+ */
+async function toFood(product: OffProduct, detailed = false): Promise<Food | null> {
   const nutrients = mapNutrients(product);
   // A product with no energy figure is unusable as a diary entry.
   if (nutrients[N.ENERGY] === undefined) return null;
@@ -290,6 +336,7 @@ async function toFood(product: OffProduct): Promise<Food | null> {
     per100g: nutrients,
     portions: buildPortions(product),
     quality: typeof product.completeness === 'number' ? product.completeness : 0.5,
+    detailed,
   });
 }
 
@@ -299,10 +346,10 @@ async function toFood(product: OffProduct): Promise<Food | null> {
 
 export async function fetchByBarcode(barcode: string): Promise<Food | null> {
   await productBucket.take();
-  const url = `${BASE}/api/v2/product/${encodeURIComponent(barcode)}.json?fields=${FIELDS}${identity()}`;
+  const url = `${BASE}/api/v2/product/${encodeURIComponent(barcode)}.json?fields=${PRODUCT_FIELDS}${identity()}`;
   const data = await request<{ status?: number; product?: OffProduct }>(url);
   if (!data.product || data.status === 0) return null;
-  return toFood(data.product);
+  return toFood(data.product, true);
 }
 
 export interface OffSearchOptions {
@@ -348,6 +395,133 @@ export class OffThrottledError extends Error {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Ranking
+// ---------------------------------------------------------------------------
+
+/**
+ * The device's language, with English appended.
+ *
+ * Search-a-licious takes a relevance context. Without one, every query is
+ * judged against the English slice of the catalogue, which is why a Greek
+ * product searched in Greek came back with nothing useful. English stays in
+ * the list because most of the catalogue only has English names.
+ */
+function searchLanguages(): string {
+  const locale = typeof navigator !== 'undefined' ? navigator.language : 'en';
+  const language = (locale ?? 'en').split('-')[0]!.toLowerCase();
+  return language === 'en' ? 'en' : `${language},en`;
+}
+
+/** The country tag matching the device locale, e.g. "en-GB" -> "en:united-kingdom". */
+const COUNTRY_TAGS: Record<string, string> = {
+  gb: 'en:united-kingdom',
+  us: 'en:united-states',
+  gr: 'en:greece',
+  de: 'en:germany',
+  fr: 'en:france',
+  it: 'en:italy',
+  es: 'en:spain',
+  nl: 'en:netherlands',
+  be: 'en:belgium',
+  pt: 'en:portugal',
+  pl: 'en:poland',
+  se: 'en:sweden',
+  no: 'en:norway',
+  dk: 'en:denmark',
+  fi: 'en:finland',
+  ie: 'en:ireland',
+  at: 'en:austria',
+  ch: 'en:switzerland',
+  ca: 'en:canada',
+  au: 'en:australia',
+  nz: 'en:new-zealand',
+};
+
+function localCountryTag(): string | null {
+  if (typeof navigator === 'undefined') return null;
+  const region = new Intl.Locale(navigator.language || 'en').region?.toLowerCase();
+  return region ? (COUNTRY_TAGS[region] ?? null) : null;
+}
+
+/**
+ * How far a product's stated energy can sit from the energy its own macros
+ * imply before the entry is treated as data noise.
+ *
+ * Deliberately loose. Rounding, food-specific Atwater factors and the European
+ * convention of counting fibre inside carbohydrate all produce legitimate error
+ * up to roughly 15%. Genuine mistakes in crowd-sourced data are not close calls
+ * — they are wrong by multiples. 25% sits in the empty space between the two.
+ */
+const ATWATER_TOLERANCE = 0.25;
+
+/**
+ * Whether a product's declared energy agrees with its macros.
+ *
+ * Returns true when there is nothing to judge: a product with sparse data is
+ * not a product with wrong data, and should be ranked on other signals rather
+ * than punished for being incomplete.
+ */
+export function isEnergyPlausible(nutrients: Nutrients): boolean {
+  const energy = nutrients[N.ENERGY];
+  if (energy === undefined || energy <= 0) return true;
+  const carbs = nutrients[N.CARBS];
+  const fat = nutrients[N.FAT];
+  const protein = nutrients[N.PROTEIN];
+  if (carbs === undefined && fat === undefined && protein === undefined) return true;
+
+  // Fibre is not added separately: both OFF and USDA already count it inside
+  // the carbohydrate figure, so including it would double-count.
+  const implied = 4 * (carbs ?? 0) + 4 * (protein ?? 0) + 9 * (fat ?? 0);
+  return Math.abs(energy - implied) / energy <= ATWATER_TOLERANCE;
+}
+
+/** Lower lets relevance dominate, higher lets popularity dominate. */
+const RANK_FUSION_K = 10;
+
+/** Products sold where the user lives get a nudge, not a guarantee. */
+const LOCAL_COUNTRY_BOOST = 1.3;
+
+interface Candidate {
+  food: Food;
+  popularity: number;
+  relevanceRank: number;
+  local: boolean;
+  plausible: boolean;
+}
+
+/**
+ * Reciprocal rank fusion of relevance position and popularity.
+ *
+ * The API returns hits in relevance order, which is sharp for a specific query
+ * and poor for a vague one — "yogurt" gives you a thousand equally relevant
+ * products and no reason to prefer any of them. `popularity_key` counts how
+ * often a product is actually looked up, so fusing the two ranks floats the
+ * products people really eat without letting a popular but off-topic item
+ * outrank an exact match, the way a straight popularity sort would.
+ *
+ * Implausible entries are demoted rather than dropped: on a narrow query they
+ * may be all there is, and a wrong-looking result the user can inspect beats an
+ * empty list. On a full page they fall off the bottom.
+ */
+function fuseRanks(candidates: Candidate[]): Candidate[] {
+  const byPopularity = [...candidates].sort((a, b) => b.popularity - a.popularity);
+  const popularityRank = new Map<Candidate, number>();
+  byPopularity.forEach((candidate, index) => popularityRank.set(candidate, index));
+
+  const score = (candidate: Candidate) => {
+    const fused =
+      1 / (RANK_FUSION_K + candidate.relevanceRank) +
+      1 / (RANK_FUSION_K + (popularityRank.get(candidate) ?? candidates.length));
+    return candidate.local ? fused * LOCAL_COUNTRY_BOOST : fused;
+  };
+
+  return [...candidates].sort((a, b) => {
+    if (a.plausible !== b.plausible) return a.plausible ? -1 : 1;
+    return score(b) - score(a);
+  });
+}
+
 export async function searchOnline(query: string, options: OffSearchOptions = {}): Promise<SearchHit[]> {
   const trimmed = query.trim();
   if (trimmed.length < 3) return [];
@@ -371,8 +545,10 @@ export async function searchOnline(query: string, options: OffSearchOptions = {}
 
   const params = new URLSearchParams({
     q: trimmed,
-    page_size: String(limit),
-    fields: FIELDS,
+    // A wide pool to rank from, not the handful actually shown.
+    page_size: String(CANDIDATE_POOL),
+    fields: SEARCH_FIELDS,
+    langs: searchLanguages(),
   });
   if (options.country) params.set('countries_tags_en', options.country);
 
@@ -380,53 +556,91 @@ export async function searchOnline(query: string, options: OffSearchOptions = {}
   // worth making the user watch a spinner for.
   const BUDGET_MS = 6_000;
 
-  let products: OffProduct[] = [];
-  try {
-    // search-a-licious is the purpose-built full-text service and is far better
-    // at ranking than the legacy filter endpoint.
-    const data = await request<{ hits?: OffProduct[] }>(
-      `${SEARCH_BASE}/search?${params.toString()}${identity()}`,
-      BUDGET_MS,
-      options.signal,
-    );
-    products = data.hits ?? [];
-  } catch (error) {
-    // Only retry a service that answered badly. Retrying one that ran out of
-    // time just spends the budget twice over.
-    if (options.signal?.aborted || (error as Error)?.name === 'TimeoutError') throw error;
-    const fallback = new URLSearchParams({
-      search_terms: trimmed,
-      page_size: String(limit),
-      fields: FIELDS,
-      json: '1',
-    });
-    const data = await request<{ products?: OffProduct[] }>(
-      `${BASE}/cgi/search.pl?${fallback.toString()}${identity()}`,
-      BUDGET_MS,
-      options.signal,
-    );
-    products = data.products ?? [];
-  }
+  const products = await fetchCandidates(params, trimmed, BUDGET_MS, options.signal);
 
   // Converted together rather than one after another. Each conversion touches
-  // IndexedDB to resolve and cache the product, and serialising fifteen of them
-  // added the whole round trip again after the network had already finished.
+  // IndexedDB to resolve and cache the product, and serialising them added the
+  // whole round trip again after the network had already finished.
   const converted = await Promise.all(products.map((product) => toFood(product)));
 
-  const hits: SearchHit[] = [];
-  for (const food of converted) {
-    if (!food) continue;
-    hits.push({
+  const country = localCountryTag();
+  const candidates: Candidate[] = [];
+  converted.forEach((food, index) => {
+    if (!food) return;
+    const product = products[index]!;
+    candidates.push({
       food,
-      // Online results start below local ones on purpose: a food you have
-      // eaten before should never be displaced by a stranger's product.
-      score: 25 + (food.quality ?? 0.5) * 15,
-      tier: 'online',
-      suggestedGrams: food.portions.find((p) => p.preferred)?.grams ?? 100,
+      popularity: num(product.popularity_key) ?? 0,
+      // Position in the API's own relevance ordering.
+      relevanceRank: index,
+      local: country !== null && (product.countries_tags ?? []).includes(country),
+      plausible: isEnergyPlausible(food.per100g),
     });
-  }
+  });
+
+  const hits: SearchHit[] = fuseRanks(candidates)
+    .slice(0, limit)
+    .map((candidate, rank) => ({
+      food: candidate.food,
+      // Online results start below local ones on purpose: a food you have
+      // eaten before should never be displaced by a stranger's product. Within
+      // the tier, the fused ordering is preserved as a descending score.
+      score: 25 + Math.max(0, limit - rank) * 0.4,
+      tier: 'online' as const,
+      suggestedGrams: candidate.food.portions.find((p) => p.preferred)?.grams ?? 100,
+    }));
+
   remember(key, hits);
   return hits;
+}
+
+/**
+ * How long to stop probing Search-a-licious after it fails.
+ *
+ * It runs on separate infrastructure from the main site and its outages last
+ * hours, not seconds. Trying it first on every single search during an outage
+ * means paying the full timeout before falling back, every time — so once it
+ * has failed, searches go straight to the classic endpoint for a while.
+ */
+const SAL_COOLDOWN_MS = 5 * 60_000;
+let skipSalUntil = 0;
+
+async function fetchCandidates(
+  params: URLSearchParams,
+  query: string,
+  budgetMs: number,
+  signal?: AbortSignal,
+): Promise<OffProduct[]> {
+  if (Date.now() >= skipSalUntil) {
+    try {
+      const data = await request<{ hits?: OffProduct[] }>(
+        `${SEARCH_BASE}/search?${params.toString()}${identity()}`,
+        budgetMs,
+        signal,
+      );
+      skipSalUntil = 0;
+      return data.hits ?? [];
+    } catch (error) {
+      // An abort is the user moving on, not the service being down.
+      if (signal?.aborted) throw error;
+      skipSalUntil = Date.now() + SAL_COOLDOWN_MS;
+    }
+  }
+
+  const fallback = new URLSearchParams({
+    search_terms: query,
+    search_simple: '1',
+    action: 'process',
+    page_size: String(CANDIDATE_POOL),
+    fields: SEARCH_FIELDS,
+    json: '1',
+  });
+  const data = await request<{ products?: OffProduct[] }>(
+    `${BASE}/cgi/search.pl?${fallback.toString()}${identity()}`,
+    budgetMs,
+    signal,
+  );
+  return data.products ?? [];
 }
 
 /** Whether an online lookup is worth attempting right now. */

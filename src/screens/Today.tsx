@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useUi } from '../state/ui';
 import { useDay, useTargets } from '../state/useTargets';
@@ -44,6 +44,7 @@ export default function Today() {
   const derived = useTargets();
   const dayData = useDay(day);
   const streak = useLiveQuery(() => currentStreak(), [], 0);
+  const { isDismissed, dismiss } = useDismissedNotices();
 
   // Swiping is how people move through days on a phone; the chevrons stay for
   // pointer users. Both directions are open: a day you missed has to be
@@ -566,20 +567,32 @@ function readDismissed(): Set<string> {
   }
 }
 
-function isDismissed(key: string): boolean {
-  return readDismissed().has(key);
-}
+/**
+ * Which notices have been dismissed, as React state.
+ *
+ * This has to live in the component that decides whether to *render* a notice.
+ * It previously lived inside the notice itself: pressing the close button wrote
+ * to localStorage and re-rendered the notice, but the parent held the
+ * `isDismissed(...)` guard and never re-read it — so the control worked
+ * perfectly and nothing moved. The notice only disappeared on a reload.
+ */
+function useDismissedNotices() {
+  const [dismissed, setDismissed] = useState(readDismissed);
 
-function dismiss(key: string): void {
-  try {
-    const all = readDismissed();
-    all.add(key);
-    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...all]));
-    // Nothing observes localStorage, so nudge React into re-reading it.
-    window.dispatchEvent(new Event('ff-notice-dismissed'));
-  } catch {
-    /* storage disabled — the notice simply stays */
-  }
+  const dismiss = (key: string) => {
+    setDismissed((current) => {
+      const next = new Set(current);
+      next.add(key);
+      try {
+        localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next]));
+      } catch {
+        /* storage disabled — it stays dismissed for this session only */
+      }
+      return next;
+    });
+  };
+
+  return { isDismissed: (key: string) => dismissed.has(key), dismiss };
 }
 
 function Notice({
@@ -597,13 +610,6 @@ function Notice({
   onOpen?: () => void;
   onDismiss: () => void;
 }) {
-  const [, force] = useState(0);
-  useEffect(() => {
-    const rerender = () => force((n) => n + 1);
-    window.addEventListener('ff-notice-dismissed', rerender);
-    return () => window.removeEventListener('ff-notice-dismissed', rerender);
-  }, []);
-
   return (
     <div
       className={cx(

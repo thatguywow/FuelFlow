@@ -104,6 +104,12 @@ export async function upsertFood(draft: FoodDraft): Promise<Food> {
       await db.foodMeta.put({ foodId: id, seenAt: ts });
       return existing;
     }
+    // A thin search result must never replace a record fetched in full. Both
+    // describe the same product, but only one of them knows its serving size.
+    if (existing?.detailed && !draft.detailed) {
+      await db.foodMeta.put({ foodId: id, seenAt: ts });
+      return existing;
+    }
   }
 
   const food: Food = {

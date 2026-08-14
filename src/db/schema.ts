@@ -58,6 +58,17 @@ export interface Food {
   quality?: number;
   verified?: boolean;
 
+  /**
+   * True when this record came from a full product lookup rather than from a
+   * search result page.
+   *
+   * A search index carries a thin projection — no serving sizes, no
+   * micronutrient tail — so a search that happens to return a product already
+   * fetched in full would otherwise overwrite the good record with a worse one,
+   * and the next time it was opened its serving sizes would be gone.
+   */
+  detailed?: boolean;
+
   createdAt: number;
   updatedAt: number;
   deleted?: boolean;

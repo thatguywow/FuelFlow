@@ -239,6 +239,23 @@ function identityKey(food: Food): string {
   return `name:${food.name.toLowerCase().trim()}|${(food.brand ?? '').toLowerCase().trim()}`;
 }
 
+/**
+ * Fill in a food that only ever came back from a search index.
+ *
+ * Search results carry names, brand and the macro block — enough to rank and
+ * to draw a row — but not serving sizes or the micronutrient tail, which the
+ * index does not hold. Rather than pay for the full document on every one of a
+ * hundred candidates, the one product actually opened is fetched in full, once.
+ *
+ * Returns the richer record, or the original when there is nothing to add.
+ */
+export async function hydrateFood(food: Food): Promise<Food> {
+  if (food.detailed || food.source !== 'off' || !food.barcode) return food;
+  if (!isOnline()) return food;
+  const full = await fetchByBarcode(food.barcode).catch(() => null);
+  return full ?? food;
+}
+
 export interface BarcodeResult {
   food: Food | null;
   /** Which tier answered — shown as a small provenance label on the result. */
