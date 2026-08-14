@@ -100,7 +100,6 @@ export default function QuickLog({ mealId, day }: { mealId: string; day: DayKey 
           value={text}
           onChange={(event) => setText(event.target.value)}
           rows={3}
-          autoFocus
           placeholder="2 eggs, 60 g oats and a cup of milk"
           className="w-full resize-none rounded-2xl border border-border bg-surface-2 p-3.5 text-[15px] leading-relaxed text-text placeholder:text-faint focus:border-brand focus:outline-none"
         />

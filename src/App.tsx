@@ -6,6 +6,7 @@ import { ensureProfile, readProfile } from './db/repo';
 import { ensureCoreData } from './db/seed';
 import { dismissBoot } from './main';
 import { applyNativeChrome } from './ui/systemChrome';
+import { useAndroidBackButton } from './ui/backButton';
 import { ToastHost, cx } from './ui/primitives';
 import { IconBody, IconChart, IconFlame, IconMore } from './ui/icons';
 import Today from './screens/Today';
@@ -32,6 +33,7 @@ export default function App() {
   useCoreDataInstall();
   useProfileSeed();
   useMidnightRollover();
+  useAndroidBackButton();
 
   // Hold the launch screen until there is something real to show. Dropping it
   // on mount would just reveal a screen of skeletons.

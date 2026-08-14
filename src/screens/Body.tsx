@@ -270,7 +270,6 @@ function MeasurementSheet({
           type="number"
           inputMode="decimal"
           step={config.step}
-          autoFocus
           value={value}
           onChange={(event) => setValue(event.target.value)}
           className="h-14 text-center text-[26px] font-semibold"

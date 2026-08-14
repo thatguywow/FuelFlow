@@ -161,7 +161,7 @@
      footer button off it — 12px, then 20px, both still read as touching it on
      a real device. The gesture pill and the three-button bar sit close enough
      that a footer needs a clear band of its own, not a hairline. */
-  --space-safe-b: 1.75rem;
+  --space-safe-b: 2.5rem;
 
   --shadow-e1: var(--ff-shadow-1);
   --shadow-e2: var(--ff-shadow-2);

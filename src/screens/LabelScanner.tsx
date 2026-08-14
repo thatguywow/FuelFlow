@@ -439,7 +439,7 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
           )}
 
           <Field label="Name">
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Oat milk, barista" autoFocus={!native} />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Oat milk, barista" />
           </Field>
           <Field label="Brand (optional)">
             <Input value={brand} onChange={(e) => setBrand(e.target.value)} />

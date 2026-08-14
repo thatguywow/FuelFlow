@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useUi } from '../state/ui';
 import { IconClose } from './icons';
 
@@ -348,6 +348,39 @@ export function Sheet({
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
+  /**
+   * Drag the sheet down to dismiss it.
+   *
+   * The grab handle looked draggable and was not — pulling it did nothing, so
+   * the affordance was a lie. The sheet follows the finger one-to-one while the
+   * gesture is live (no transition, or it lags behind), and on release either
+   * springs back or completes the dismissal depending on how far and how fast
+   * it was thrown.
+   */
+  const drag = useRef({ startY: 0, startTime: 0, active: false });
+  const [dragY, setDragY] = useState(0);
+
+  const onDragStart = (clientY: number) => {
+    drag.current = { startY: clientY, startTime: Date.now(), active: true };
+  };
+  const onDragMove = (clientY: number) => {
+    if (!drag.current.active) return;
+    // Downward only — dragging up should not lift the sheet off its edge.
+    setDragY(Math.max(0, clientY - drag.current.startY));
+  };
+  const onDragEnd = () => {
+    if (!drag.current.active) return;
+    const travelled = dragY;
+    const elapsed = Math.max(1, Date.now() - drag.current.startTime);
+    const velocity = travelled / elapsed; // px per ms
+    drag.current.active = false;
+    const height = ref.current?.getBoundingClientRect().height ?? 600;
+    // A short flick counts as much as a long slow pull, which is what makes
+    // the gesture feel responsive rather than like a threshold to beat.
+    if (travelled > height * 0.28 || velocity > 0.6) onClose();
+    else setDragY(0);
+  };
+
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -386,11 +419,27 @@ export function Sheet({
           'rounded-t-(--radius-sheet) sm:max-w-lg sm:rounded-(--radius-sheet)',
           size === 'tall' ? 'h-[92dvh] sm:h-[86vh]' : 'max-h-[92dvh]',
         )}
+        style={{
+          transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
+          // No transition while the finger is down, or the sheet lags behind it.
+          transition: drag.current.active ? 'none' : 'transform 0.28s var(--ease-out-quint)',
+        }}
       >
-        {/* Drag affordance. Purely visual, but its absence is what makes a
-            bottom sheet feel like a web modal instead of a native one. */}
-        <div className="flex justify-center pt-2.5 sm:hidden">
-          <div className="h-1 w-9 rounded-full bg-border-strong" />
+        {/* The grab handle. It looked draggable long before it was. The strip
+            is padded well beyond the 36px bar so the gesture starts wherever a
+            thumb lands, and `touch-none` keeps the browser from claiming the
+            drag as a scroll before the sheet sees it. */}
+        <div
+          className="shrink-0 cursor-grab touch-none pb-1 pt-3 active:cursor-grabbing sm:hidden"
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            onDragStart(event.clientY);
+          }}
+          onPointerMove={(event) => onDragMove(event.clientY)}
+          onPointerUp={onDragEnd}
+          onPointerCancel={onDragEnd}
+        >
+          <div className="mx-auto h-1 w-9 rounded-full bg-border-strong" />
         </div>
 
         {/* No divider under the title — spacing separates it well enough, and a

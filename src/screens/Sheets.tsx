@@ -58,7 +58,6 @@ export function LogWeight() {
             type="number"
             inputMode="decimal"
             step="any"
-            autoFocus
             value={value}
             onChange={(event) => setValue(event.target.value)}
             className="h-14 text-center text-[26px] font-semibold"
@@ -179,7 +178,6 @@ export function QuickAddSheet({ mealId, day }: { mealId: string; day: DayKey }) 
             value={kcal}
             onChange={(e) => setKcal(e.target.value)}
             placeholder="0"
-            autoFocus
             className="h-14 text-center text-[26px] font-semibold"
           />
         </Field>
@@ -309,7 +307,7 @@ export function CreateFood({
         )}
 
         <Field label="Name">
-          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="Oat milk, barista" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Oat milk, barista" />
         </Field>
         <Field label="Brand (optional)">
           <Input value={brand} onChange={(e) => setBrand(e.target.value)} />

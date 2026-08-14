@@ -28,6 +28,12 @@ const config: CapacitorConfig = {
     // properly identified for all in-page requests. Direct API calls go through
     // CapacitorHttp, which sets the full header.
     appendUserAgent: 'FuelFlow/0.1.0',
+
+    // The WebView paints its own background between the native launch window
+    // going away and the page's first frame. Left at the default that gap is a
+    // flash of black between the launch mark and the app — the "then it goes
+    // black for a bit" in the middle of an otherwise continuous start.
+    backgroundColor: '#080A0F',
   },
 
   ios: {

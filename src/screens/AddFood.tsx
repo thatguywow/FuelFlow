@@ -52,12 +52,11 @@ export default function AddFood({ mealId, day }: { mealId: string; day: DayKey }
   const [suggestions, setSuggestions] = useState<SearchHit[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // No autofocus. Raising the keyboard unasked covers half the screen — often
+  // the suggestions and recents the sheet just offered — and takes a dismissal
+  // to get back. Tapping the field is one tap and puts the user in charge of it.
   useEffect(() => {
     void suggestionsForMeal(mealId).then(setSuggestions);
-    // Autofocus is deliberate here: opening this sheet is always an explicit
-    // "I want to add something" action.
-    const timer = setTimeout(() => inputRef.current?.focus(), 250);
-    return () => clearTimeout(timer);
   }, [mealId]);
 
   useEffect(() => {

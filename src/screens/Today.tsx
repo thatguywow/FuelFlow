@@ -13,6 +13,7 @@ import { EnergyRing, MacroRow, type MacroBarDatum } from '../ui/charts';
 import { tapFeedback, useAnimatedNumber, useStagger } from '../ui/motion';
 import { useSwipe } from '../ui/gestures';
 import { formatCount } from '../core/format';
+import { displayName } from '../core/foodName';
 import { formatVolume } from '../core/units';
 import {
   IconApple,
@@ -390,10 +391,10 @@ function EntryRow({
           }}
           className="min-w-0 flex-1 px-4 py-3 text-left transition-colors hover:bg-surface-2"
         >
-          <div className="truncate text-[15px]">{entry.name}</div>
+          <div className="truncate text-[15px]">{displayName(entry.name).primary}</div>
           <div className="mt-0.5 truncate text-[12.5px] text-faint">
             {entry.brand ? `${entry.brand} · ` : ''}
-            {entry.quickAdd ? 'Quick add' : entry.portionLabel ?? `${Math.round(entry.grams)} g`}
+            {amountLabel(entry)}
           </div>
         </button>
 
@@ -471,6 +472,33 @@ function WaterRow({ day, ml, targetMl }: { day: DayKey; ml: number; targetMl: nu
       </button>
     </div>
   );
+}
+
+/**
+ * What was actually eaten, as a phrase.
+ *
+ * `portionLabel` names the *unit* the food was logged in, not the amount: two
+ * hundred grams of chicken taken as 2 x the "100 g" portion stores grams 200
+ * and label "100 g". The diary printed the label alone, so a 240 kcal entry sat
+ * next to the words "100 g" and looked like a calculation error.
+ *
+ * A plain weight portion carries no information the total does not, so it is
+ * replaced by the total. A household measure does — "2 cups" is how someone
+ * thinks about it — so the count, the measure and the weight are all kept.
+ */
+function amountLabel(entry: DiaryEntry): string {
+  if (entry.quickAdd) return 'Quick add';
+
+  const grams = `${Math.round(entry.grams)} g`;
+  const label = entry.portionLabel?.trim();
+  if (!label) return grams;
+
+  // "100 g", "30 ml", "1 g" — a bare weight or volume.
+  if (/^[\d.,]+\s*(g|ml|kg|l)$/i.test(label)) return grams;
+
+  const count = entry.portionCount ?? 1;
+  const prefix = Math.abs(count - 1) < 0.01 ? '' : `${formatCount(count)} × `;
+  return `${prefix}${label} · ${grams}`;
 }
 
 function TodaySkeleton() {

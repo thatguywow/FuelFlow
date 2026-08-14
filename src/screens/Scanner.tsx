@@ -364,7 +364,6 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
                 type="text"
                 inputMode="numeric"
                 autoComplete="off"
-                autoFocus
                 value={manual}
                 onChange={(event) => setManual(event.target.value.replace(/\D/g, '').slice(0, 14))}
                 placeholder="3017620422003"

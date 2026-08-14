@@ -144,14 +144,17 @@ export default function FoodDetail({
               className="w-24 text-center text-[17px] font-semibold"
               aria-label="Amount"
             />
-            {/* The dropdown indicator is drawn by the platform *over* the
-                select's own box, so without room reserved on the right it sits
-                on top of the portion text. `truncate` then clips against the
-                arrow rather than before it. */}
+            {/* Room reserved on the right for the platform's dropdown arrow,
+                which is drawn over the select's own box and otherwise sits on
+                top of the portion text.
+
+                No `truncate` here: on the Android WebView, `text-overflow` on a
+                <select> blanks the selected option entirely rather than
+                ellipsising it — the control rendered empty. */}
             <select
               value={portionIndex}
               onChange={(event) => setPortionIndex(Number(event.target.value))}
-              className="h-11 min-w-0 flex-1 truncate rounded-xl border border-border bg-surface-2 py-0 pl-3 pr-9 text-[15px] text-text focus:border-brand focus:outline-none"
+              className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface-2 pl-3 pr-9 text-[15px] text-text focus:border-brand focus:outline-none"
               aria-label="Portion"
             >
               {portions.map((p, index) => (
