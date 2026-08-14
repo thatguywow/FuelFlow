@@ -554,13 +554,18 @@ function bandPath(
 // Bar chart
 // ---------------------------------------------------------------------------
 
+/**
+ * `target` draws the reference line. A bar may also carry its own `target`,
+ * which is what decides whether it counts as over — targets move, and a day
+ * logged against 2,400 kcal was not an overshoot because the goal is 2,100 now.
+ */
 export function BarChart({
   bars,
   target,
   height = 120,
   className,
 }: {
-  bars: { label: string; value: number; highlight?: boolean }[];
+  bars: { label: string; value: number; highlight?: boolean; target?: number }[];
   target?: number;
   height?: number;
   className?: string;
@@ -579,25 +584,28 @@ export function BarChart({
           </span>
         </div>
       )}
-      {bars.map((bar, i) => (
-        <div key={i} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-          <div
-            className={cx(
-              'w-full rounded-[3px] transition-[height] duration-500 ease-(--ease-out-quint)',
-              bar.value === 0
-                ? 'bg-surface-2'
-                : bar.highlight
-                  ? 'brand-gradient shadow-[0_0_10px_-2px_var(--ff-brand-glow)]'
-                  : target && bar.value > target
-                    ? 'bg-warn/70'
-                    : 'bg-brand/40',
-            )}
-            style={{ height: `${Math.max(bar.value === 0 ? 2 : 4, (bar.value / max) * 100)}%` }}
-            title={`${bar.label}: ${formatCount(bar.value)}`}
-          />
-          <span className="truncate text-[9px] text-faint">{bar.label}</span>
-        </div>
-      ))}
+      {bars.map((bar, i) => {
+        const against = bar.target ?? target;
+        return (
+          <div key={i} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+            <div
+              className={cx(
+                'w-full rounded-[3px] transition-[height] duration-500 ease-(--ease-out-quint)',
+                bar.value === 0
+                  ? 'bg-surface-2'
+                  : bar.highlight
+                    ? 'brand-gradient shadow-[0_0_10px_-2px_var(--ff-brand-glow)]'
+                    : against && bar.value > against
+                      ? 'bg-warn/70'
+                      : 'bg-brand/40',
+              )}
+              style={{ height: `${Math.max(bar.value === 0 ? 2 : 4, (bar.value / max) * 100)}%` }}
+              title={`${bar.label}: ${formatCount(bar.value)}${against ? ` of ${formatCount(against)}` : ''}`}
+            />
+            <span className="truncate text-[9px] text-faint">{bar.label}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

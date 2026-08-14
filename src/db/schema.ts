@@ -223,6 +223,57 @@ export interface DayMeta {
   updatedAt: number;
 }
 
+/** The targets that applied on a given day, frozen as that day was logged. */
+export interface DayGoals {
+  energyKcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+}
+
+/**
+ * Precomputed totals for one day.
+ *
+ * Analytics used to re-add every entry in the window on every read, which meant
+ * a year of Trends deserialised thousands of rows to produce thirty numbers.
+ * This table holds those numbers, maintained by applying the difference on each
+ * write rather than by recomputing — so logging a food costs one small row
+ * update, and reading a range costs one row per day.
+ *
+ * `rowCount` counts every row filed under the day including tombstones. It is
+ * not displayed: it exists so a reader can compare it against a native index
+ * count and know, cheaply, whether these totals still describe the diary.
+ *
+ * `goals` is what makes history honest. Targets move — that is the whole point
+ * of adaptive expenditure — and a chart that scores every past day against
+ * today's number silently rewrites your record every time the goal changes.
+ */
+export interface DayStats {
+  day: DayKey;
+  nutrients: Nutrients;
+  /** Live entries, i.e. excluding tombstones. */
+  entryCount: number;
+  /** Every row filed under this day, tombstones included. */
+  rowCount: number;
+  goals?: DayGoals;
+  updatedAt: number;
+}
+
+/**
+ * Cache bookkeeping for a food, kept out of the food record itself.
+ *
+ * Every remote search result used to be written back in full just to refresh a
+ * timestamp — a whole row plus a rebuild of its multiEntry token index, dozens
+ * of times per search, for data that had not changed. "When did we last see
+ * this" is metadata about the cache, not about the food, so it lives in its own
+ * two-field row and the food is only rewritten when its contents actually move.
+ */
+export interface FoodMeta {
+  foodId: string;
+  /** When an upstream lookup last returned this food. */
+  seenAt: number;
+}
+
 export interface KeyValue {
   key: string;
   value: unknown;
@@ -242,6 +293,8 @@ export class FuelFlowDb extends Dexie {
   fasts!: Table<FastSession, string>;
   usage!: Table<FoodUsage, string>;
   dayMeta!: Table<DayMeta, string>;
+  dayStats!: Table<DayStats, string>;
+  foodMeta!: Table<FoodMeta, string>;
   kv!: Table<KeyValue, string>;
 
   constructor() {
@@ -263,6 +316,15 @@ export class FuelFlowDb extends Dexie {
       usage: 'foodId, lastUsedAt, useCount, favorite',
       dayMeta: 'day',
       kv: 'key',
+    });
+
+    // Two derived tables. Neither holds anything that cannot be rebuilt from
+    // the diary, so the upgrade needs no migration step: `ensureDayStats` fills
+    // `dayStats` on the next launch and `foodMeta` fills itself as foods are
+    // looked up. Dexie carries forward every table not named here.
+    this.version(2).stores({
+      dayStats: 'day',
+      foodMeta: 'foodId, seenAt',
     });
   }
 }

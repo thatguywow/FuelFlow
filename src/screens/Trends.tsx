@@ -209,10 +209,20 @@ export default function Trends() {
                 label: index % Math.ceil(range / 8) === 0 ? s.day.slice(8) : '',
                 value: s.nutrients[N.ENERGY] ?? 0,
                 highlight: index === summaries.length - 1,
+                // Each day is judged against the goal that applied on it. Using
+                // today's number for every bar meant nudging a target re-marked
+                // months of history as over or under after the fact.
+                target: s.goals?.energyKcal,
               }))}
             />
           ) : (
             <EmptyState icon={<IconChart size={28} />} title="Nothing logged in this window" />
+          )}
+          {loggedDays.some((s) => s.goals && Math.round(s.goals.energyKcal) !== Math.round(targets.energyKcal)) && (
+            <p className="mt-2 text-[11.5px] leading-relaxed text-faint">
+              Your target has changed during this window. Each bar is coloured against the goal that
+              applied on that day; the dashed line is today's.
+            </p>
           )}
         </Card>
       </section>

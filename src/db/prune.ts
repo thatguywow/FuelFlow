@@ -47,12 +47,14 @@ export async function pruneStaleFoods(
   // A single pass over usage and entries, rather than a query per food: with a
   // few thousand cached rows the per-row version was the slow part of the very
   // startup this is meant to speed up.
-  const [usageRows, entryFoodIds] = await Promise.all([
+  const [usageRows, metaRows, entryFoodIds] = await Promise.all([
     db.usage.toArray(),
+    db.foodMeta.toArray(),
     db.entries.toArray().then((entries) => new Set(entries.map((e) => e.foodId).filter(Boolean))),
   ]);
 
   const usageById = new Map(usageRows.map((row) => [row.foodId, row]));
+  const seenById = new Map(metaRows.map((row) => [row.foodId, row.seenAt]));
 
   const doomed: string[] = [];
   for (const food of cached) {
@@ -61,9 +63,11 @@ export async function pruneStaleFoods(
     const usage = usageById.get(food.id);
     if (usage?.favorite) continue;
 
-    // `lastUsedAt` is when it was last actually eaten; `updatedAt` is when the
-    // cache last saw it. The later of the two is how recently it mattered.
-    const touched = Math.max(usage?.lastUsedAt ?? 0, food.updatedAt ?? 0);
+    // `lastUsedAt` is when it was last actually eaten; `seenAt` is when a
+    // lookup last returned it. `updatedAt` is the fallback for rows cached
+    // before the sidecar existed. The latest of the three is how recently this
+    // food mattered.
+    const touched = Math.max(usage?.lastUsedAt ?? 0, seenById.get(food.id) ?? 0, food.updatedAt ?? 0);
     if (touched >= cutoff) continue;
 
     doomed.push(food.id);
@@ -71,8 +75,10 @@ export async function pruneStaleFoods(
 
   if (doomed.length > 0) {
     await db.foods.bulkDelete(doomed);
-    // Usage rows for foods that no longer exist are dead weight of their own.
+    // Usage and cache rows for foods that no longer exist are dead weight of
+    // their own.
     await db.usage.bulkDelete(doomed);
+    await db.foodMeta.bulkDelete(doomed);
   }
 
   return { scanned: cached.length, removed: doomed.length };

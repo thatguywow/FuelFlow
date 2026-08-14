@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useUi, type Tab } from './state/ui';
 import { useTargets } from './state/useTargets';
 import { ensureProfile, readProfile } from './db/repo';
+import { ensureDayStats, recordDayGoals } from './db/dayStats';
 import { ensureCoreData } from './db/seed';
 import { pruneStaleFoods } from './db/prune';
 import { dismissBoot } from './main';
@@ -36,6 +37,7 @@ export default function App() {
   useMidnightRollover();
   useAndroidBackButton();
   useCachePrune();
+  useDayAggregates(derived);
 
   // Hold the launch screen until there is something real to show. Dropping it
   // on mount would just reveal a screen of skeletons.
@@ -184,6 +186,48 @@ function useCachePrune() {
       window.clearTimeout(idle as number);
     };
   }, []);
+}
+
+/**
+ * Keeps the per-day aggregates honest.
+ *
+ * Two jobs, in order. The backfill computes totals for a diary that predates
+ * the table — once, then never again. Then today's targets are stamped onto
+ * today's row, because that is the only moment they can be captured: nothing
+ * records what a goal used to be, so a chart drawn later has no way to know
+ * that April was logged against a different number. Without this, changing a
+ * goal silently re-scores every day you have ever logged.
+ *
+ * Keyed on the rounded targets rather than on the derived object, which is
+ * rebuilt on every diary write and would otherwise re-run this on each log.
+ */
+function useDayAggregates(derived: ReturnType<typeof useTargets>): void {
+  const todayKey = useUi((s) => s.todayKey);
+  const targets = derived?.targets;
+  const signature = targets
+    ? `${Math.round(targets.energyKcal)}|${Math.round(targets.macros.protein)}|${Math.round(targets.macros.carbs)}|${Math.round(targets.macros.fat)}`
+    : '';
+
+  useEffect(() => {
+    if (!targets) return;
+    let cancelled = false;
+    void (async () => {
+      // Ordered: a rebuild carries existing goal snapshots across, but writing
+      // one into the gap between its read and its write would lose it.
+      await ensureDayStats().catch(() => undefined);
+      if (cancelled) return;
+      await recordDayGoals(todayKey, {
+        energyKcal: targets.energyKcal,
+        proteinG: targets.macros.protein,
+        carbsG: targets.macros.carbs,
+        fatG: targets.macros.fat,
+      }).catch(() => undefined);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature, todayKey]);
 }
 
 /**

@@ -6,13 +6,15 @@ import type {
   ExerciseLog,
   FastSession,
   Food,
+  FoodSource,
   FoodUsage,
   MealTemplate,
   Recipe,
   WaterLog,
   WeightLog,
 } from './schema';
-import { N, addNutrients, scaleNutrients, sumNutrients, type Nutrients } from '../core/nutrients';
+import { applyEntryChange, applyEntryChanges } from './dayStats';
+import { N, scaleNutrients, sumNutrients, type Nutrients } from '../core/nutrients';
 import { addDays, daysBetween, toDayKey, type DayKey } from '../core/dates';
 import type { DailyObservation } from '../core/adaptive';
 import { createDefaultProfile, type UserProfile } from '../core/profile';
@@ -66,9 +68,22 @@ export type FoodDraft = Omit<Food, 'id' | 'tokens' | 'createdAt' | 'updatedAt'> 
   Partial<Pick<Food, 'id' | 'createdAt'>>;
 
 /**
+ * Sources that are a cache of somebody else's database rather than the user's
+ * own data. Only these are eligible to be skipped and pruned.
+ */
+const CACHE_SOURCES = new Set<FoodSource>(['off', 'branded']);
+
+/**
  * Insert or refresh a food. Foods arriving from the same upstream source and id
  * collapse onto one record, so scanning the same barcode twice never produces a
  * duplicate.
+ *
+ * When a cached food comes back from upstream unchanged — the common case, since
+ * every search result is written back — nothing is written to `foods` at all.
+ * Rewriting it meant re-tokenising the name and rebuilding its rows in the
+ * multiEntry token index, dozens of times per search, to store bytes identical
+ * to the ones already there. All that actually changed was when we last saw it,
+ * and that now lives in its own tiny row.
  */
 export async function upsertFood(draft: FoodDraft): Promise<Food> {
   const ts = now();
@@ -83,6 +98,14 @@ export async function upsertFood(draft: FoodDraft): Promise<Food> {
     id = match?.id;
   }
 
+  if (id && CACHE_SOURCES.has(draft.source)) {
+    const existing = await db.foods.get(id);
+    if (existing && sameContent(existing, draft)) {
+      await db.foodMeta.put({ foodId: id, seenAt: ts });
+      return existing;
+    }
+  }
+
   const food: Food = {
     ...draft,
     id: id ?? newId(),
@@ -91,7 +114,44 @@ export async function upsertFood(draft: FoodDraft): Promise<Food> {
     updatedAt: ts,
   };
   await db.foods.put(food);
+  if (CACHE_SOURCES.has(food.source)) await db.foodMeta.put({ foodId: food.id, seenAt: ts });
   return food;
+}
+
+/**
+ * Whether an incoming copy says anything new about a food.
+ *
+ * Compares only the fields a lookup can actually change. `updatedAt` is
+ * excluded on purpose — it is the very thing that used to force the write.
+ */
+function sameContent(existing: Food, draft: FoodDraft): boolean {
+  return (
+    existing.name === draft.name &&
+    existing.brand === draft.brand &&
+    existing.category === draft.category &&
+    existing.barcode === draft.barcode &&
+    existing.quality === draft.quality &&
+    existing.verified === draft.verified &&
+    existing.liquid === draft.liquid &&
+    existing.densityGPerMl === draft.densityGPerMl &&
+    !existing.deleted === !draft.deleted &&
+    sameVector(existing.per100g, draft.per100g) &&
+    samePortions(existing.portions, draft.portions)
+  );
+}
+
+function sameVector(a: Nutrients, b: Nutrients): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) if (a[Number(key)] !== b[Number(key)]) return false;
+  return true;
+}
+
+function samePortions(a: Food['portions'], b: Food['portions']): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((portion, index) => {
+    const other = b[index]!;
+    return portion.label === other.label && portion.grams === other.grams && !portion.preferred === !other.preferred;
+  });
 }
 
 export function getFood(id: string): Promise<Food | undefined> {
@@ -195,9 +255,13 @@ export async function logFood(input: LogFoodInput): Promise<DiaryEntry> {
     updatedAt: ts,
   };
 
-  await db.transaction('rw', db.entries, db.usage, async () => {
+  // The aggregate moves inside the same transaction as the entry. Outside it,
+  // a failure between the two would leave the day's totals describing a diary
+  // that was never written.
+  await db.transaction('rw', db.entries, db.usage, db.dayStats, async () => {
     await db.entries.add(entry);
     await recordUsage(input.food.id, input.grams, input.mealId);
+    await applyEntryChange(undefined, entry);
   });
   return entry;
 }
@@ -222,7 +286,10 @@ export async function quickAdd(
     loggedAt: ts,
     updatedAt: ts,
   };
-  await db.entries.add(entry);
+  await db.transaction('rw', db.entries, db.dayStats, async () => {
+    await db.entries.add(entry);
+    await applyEntryChange(undefined, entry);
+  });
   return entry;
 }
 
@@ -247,31 +314,36 @@ export async function updateEntryAmount(entryId: string, grams: number, portionL
     nutrients = entry.nutrients;
   }
 
-  await db.entries.put({
+  const next: DiaryEntry = {
     ...entry,
     grams,
     portionLabel: portionLabel ?? entry.portionLabel,
     nutrients,
     updatedAt: now(),
-  });
+  };
+  await writeEntry(entry, next);
 }
 
 export async function moveEntry(entryId: string, day: DayKey, mealId: string): Promise<void> {
   const entry = await db.entries.get(entryId);
   if (!entry) return;
-  await db.entries.put({
+  const next: DiaryEntry = {
     ...entry,
     day,
     mealId,
     position: await nextPosition(day, mealId),
     updatedAt: now(),
-  });
+  };
+  // A move can cross days, which is why the aggregate takes both sides rather
+  // than a signed amount: the old day gives the food back and the new one takes
+  // it, in one step.
+  await writeEntry(entry, next);
 }
 
 export async function deleteEntry(entryId: string): Promise<DiaryEntry | undefined> {
   const entry = await db.entries.get(entryId);
   if (!entry) return undefined;
-  await db.entries.put({ ...entry, deleted: true, updatedAt: now() });
+  await writeEntry(entry, { ...entry, deleted: true, updatedAt: now() });
   return entry;
 }
 
@@ -279,7 +351,15 @@ export async function deleteEntry(entryId: string): Promise<DiaryEntry | undefin
 export async function restoreEntry(entryId: string): Promise<void> {
   const entry = await db.entries.get(entryId);
   if (!entry) return;
-  await db.entries.put({ ...entry, deleted: false, updatedAt: now() });
+  await writeEntry(entry, { ...entry, deleted: false, updatedAt: now() });
+}
+
+/** The one place an existing entry is rewritten, so no change escapes the totals. */
+async function writeEntry(before: DiaryEntry, after: DiaryEntry): Promise<void> {
+  await db.transaction('rw', db.entries, db.dayStats, async () => {
+    await db.entries.put(after);
+    await applyEntryChange(before, after);
+  });
 }
 
 export async function entriesForDay(day: DayKey): Promise<DiaryEntry[]> {
@@ -326,7 +406,10 @@ export async function copyMeal(
       deleted: false,
     });
   }
-  await db.entries.bulkAdd(copies);
+  await db.transaction('rw', db.entries, db.dayStats, async () => {
+    await db.entries.bulkAdd(copies);
+    await applyEntryChanges(copies.map((after) => ({ after })));
+  });
   return copies.length;
 }
 
@@ -362,7 +445,10 @@ export async function applyMealTemplate(templateId: string, day: DayKey, mealId:
     loggedAt: ts,
     updatedAt: ts,
   }));
-  await db.entries.bulkAdd(entries);
+  await db.transaction('rw', db.entries, db.dayStats, async () => {
+    await db.entries.bulkAdd(entries);
+    await applyEntryChanges(entries.map((after) => ({ after })));
+  });
   return entries.length;
 }
 
@@ -419,6 +505,57 @@ export async function saveRecipe(recipe: Recipe): Promise<Food> {
     quality: 1,
     verified: true,
   });
+}
+
+/** Live recipes, newest first. */
+export async function listRecipes(): Promise<Recipe[]> {
+  const rows = await db.recipes.toArray();
+  return rows.filter((r) => !r.deleted).sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/**
+ * Retire a recipe and the food it is mirrored into.
+ *
+ * Both are tombstoned rather than removed: diary entries hold their own
+ * nutrition snapshot so history is safe either way, but editing one of those
+ * entries re-reads the food, and a hard delete would turn that into a dead end.
+ */
+export async function deleteRecipe(recipeId: string): Promise<void> {
+  const ts = now();
+  const recipe = await db.recipes.get(recipeId);
+  if (recipe) await db.recipes.put({ ...recipe, deleted: true, updatedAt: ts });
+
+  const mirror = await db.foods.where('[source+sourceId]').equals(['recipe', recipeId]).first();
+  if (mirror) await db.foods.put({ ...mirror, deleted: true, updatedAt: ts });
+}
+
+/** The food record a recipe is mirrored into, which is what gets logged. */
+export function foodForRecipe(recipeId: string): Promise<Food | undefined> {
+  return db.foods.where('[source+sourceId]').equals(['recipe', recipeId]).first();
+}
+
+/** Foods the user made themselves, newest first. */
+export async function listOwnFoods(): Promise<Food[]> {
+  const rows = await db.foods.where('source').anyOf(['user', 'label']).toArray();
+  return rows.filter((f) => !f.deleted).sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/**
+ * Everything marked a favourite.
+ *
+ * Scanned rather than indexed: IndexedDB has no boolean key type, so rows with
+ * `favorite: true` never appear in the `favorite` index at all. The usage table
+ * only holds foods this device has actually touched, so the scan is small.
+ */
+export async function listFavorites(): Promise<Food[]> {
+  const marked = await db.usage.filter((row) => row.favorite === true).toArray();
+  if (marked.length === 0) return [];
+  const foods = await db.foods.bulkGet(marked.map((row) => row.foodId));
+  const byId = new Map(foods.filter(Boolean).map((food) => [food!.id, food!]));
+  return marked
+    .sort((a, b) => b.lastUsedAt - a.lastUsedAt)
+    .map((row) => byId.get(row.foodId))
+    .filter((food): food is Food => food !== undefined && !food.deleted);
 }
 
 // ---------------------------------------------------------------------------
@@ -591,29 +728,7 @@ export async function buildObservations(days = 180, end: DayKey = toDayKey()): P
 // Aggregation helpers for the analytics screens
 // ---------------------------------------------------------------------------
 
-export interface DailySummary {
-  day: DayKey;
-  nutrients: Nutrients;
-  entryCount: number;
-}
-
-export async function dailySummaries(from: DayKey, to: DayKey): Promise<DailySummary[]> {
-  const entries = await entriesForRange(from, to);
-  const byDay = new Map<DayKey, DailySummary>();
-  for (const entry of entries) {
-    let summary = byDay.get(entry.day);
-    if (!summary) {
-      summary = { day: entry.day, nutrients: {}, entryCount: 0 };
-      byDay.set(entry.day, summary);
-    }
-    addNutrients(summary.nutrients, entry.nutrients);
-    summary.entryCount++;
-  }
-  const total = daysBetween(from, to);
-  const out: DailySummary[] = [];
-  for (let i = 0; i <= total; i++) {
-    const day = addDays(from, i);
-    out.push(byDay.get(day) ?? { day, nutrients: {}, entryCount: 0 });
-  }
-  return out;
-}
+// Day totals are served from the precomputed aggregates rather than by adding
+// up the diary on every read. Re-exported from here because this is where every
+// screen already looks for them.
+export { dailySummaries, type DailySummary } from './dayStats';
