@@ -11,7 +11,30 @@ export type DayKey = string & { readonly __brand?: 'DayKey' };
 
 const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
 
-export function toDayKey(date: Date = new Date()): DayKey {
+/**
+ * The clock every "now" in the app reads.
+ *
+ * A diary day runs midnight to midnight in local time, and date logic that
+ * only misbehaves near a boundary is exactly the kind that passes every test
+ * run at the wrong hour — a rollover bug is invisible at two in the afternoon.
+ * Routing the current time through one function means a test can stand at
+ * 23:59:59, cross midnight, and check what the app does, instead of reaching
+ * into `Date.prototype` and hoping.
+ *
+ * Production never assigns this. Tests set it and must restore it.
+ */
+export let now: () => Date = () => new Date();
+
+/** Test seam. Returns a function that puts the real clock back. */
+export function setClockForTesting(clock: () => Date): () => void {
+  const previous = now;
+  now = clock;
+  return () => {
+    now = previous;
+  };
+}
+
+export function toDayKey(date: Date = now()): DayKey {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 

@@ -103,6 +103,8 @@ export const useUi = create<UiState>((set, get) => ({
    * navigated elsewhere, moving the screen under them would be worse.
    */
   syncToday: () => {
+    // Reads the clock through `toDayKey`, which routes via `now()` — so a test
+    // can place the app either side of midnight without patching Date itself.
     const observed = toDayKey();
     const { todayKey, day } = get();
     if (observed === todayKey) return;

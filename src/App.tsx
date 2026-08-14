@@ -4,6 +4,7 @@ import { useUi, type Tab } from './state/ui';
 import { useTargets } from './state/useTargets';
 import { ensureProfile, readProfile } from './db/repo';
 import { ensureCoreData } from './db/seed';
+import { pruneStaleFoods } from './db/prune';
 import { dismissBoot } from './main';
 import { applyNativeChrome } from './ui/systemChrome';
 import { useAndroidBackButton } from './ui/backButton';
@@ -34,6 +35,7 @@ export default function App() {
   useProfileSeed();
   useMidnightRollover();
   useAndroidBackButton();
+  useCachePrune();
 
   // Hold the launch screen until there is something real to show. Dropping it
   // on mount would just reveal a screen of skeletons.
@@ -158,6 +160,29 @@ export default function App() {
 function useProfileSeed() {
   useEffect(() => {
     void ensureProfile();
+  }, []);
+}
+
+/**
+ * Clears out cached remote foods nobody uses, once per launch.
+ *
+ * Deliberately last and idle: it is housekeeping, and must never compete with
+ * the first paint or with seeding. A failure is not worth surfacing — the only
+ * consequence is that the table stays large for another launch.
+ */
+function useCachePrune() {
+  useEffect(() => {
+    let cancelled = false;
+    const run = () => {
+      if (cancelled) return;
+      void pruneStaleFoods().catch(() => undefined);
+    };
+    const idle = window.requestIdleCallback?.(run, { timeout: 15_000 }) ?? window.setTimeout(run, 8000);
+    return () => {
+      cancelled = true;
+      window.cancelIdleCallback?.(idle as number);
+      window.clearTimeout(idle as number);
+    };
   }, []);
 }
 

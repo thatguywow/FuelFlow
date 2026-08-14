@@ -25,6 +25,9 @@ import { nearDuplicateKey, relevance } from './relevance';
  * gets faster and more offline-capable the more it is used.
  */
 
+/** Shortest query worth running against any tier. */
+export const MIN_QUERY_LENGTH = 2;
+
 export interface SearchOptions {
   limit?: number;
   sources?: FoodSource[];
@@ -57,6 +60,23 @@ export async function searchTiered(
   const trimmed = query.trim();
 
   if (trimmed.length === 0) {
+    onResults({ hits: await recentFoods(limit), pending: false, skipped: [] });
+    return;
+  }
+
+  /*
+   * One character is not a search.
+   *
+   * A single letter matches thousands of rows, fills the candidate cap with
+   * whatever the index happened to reach first, and cannot rank them
+   * meaningfully — so the work is wasted twice over: once locally, and again
+   * on a network request nobody can use the answer to. Every keystroke of a
+   * real query used to pay that cost on its way past.
+   *
+   * Recents stay on screen until there is enough to search for, which is more
+   * useful than a list assembled from one letter.
+   */
+  if (trimmed.length < MIN_QUERY_LENGTH) {
     onResults({ hits: await recentFoods(limit), pending: false, skipped: [] });
     return;
   }
