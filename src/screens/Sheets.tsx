@@ -4,7 +4,7 @@ import { useTargets } from '../state/useTargets';
 import { toDayKey, type DayKey } from '../core/dates';
 import { N } from '../core/nutrients';
 import { fromKg, toKg } from '../core/units';
-import { logWeight, quickAdd, upsertFood, logFood } from '../db/repo';
+import { logExercise, logWeight, quickAdd, upsertFood, logFood } from '../db/repo';
 import { formatCount } from '../core/format';
 import { Button, Card, Field, Input, Sheet, cx } from '../ui/primitives';
 
@@ -72,6 +72,81 @@ export function LogWeight() {
           Weigh in first thing, after the bathroom, before food or drink. Day-to-day swings are water
           and gut contents, not fat — FuelFlow shows you the trend line, not the raw number.
         </p>
+      </div>
+    </Sheet>
+  );
+}
+
+/**
+ * Logging exercise.
+ *
+ * The day already tracked burned calories and fed them into the ring — there
+ * was simply no way to put a number in, so the field was permanently zero.
+ *
+ * Minutes are optional and stored but not used to derive the figure: guessing
+ * kcal from duration needs a MET value per activity and the user's weight, and
+ * a wrong number here silently inflates the day's allowance. Better to take
+ * what the watch or machine reported.
+ */
+export function LogExercise({ day }: { day: DayKey }) {
+  const closeSheet = useUi((s) => s.closeSheet);
+  const toast = useUi((s) => s.toast);
+
+  const [name, setName] = useState('');
+  const [kcal, setKcal] = useState('');
+  const [minutes, setMinutes] = useState('');
+
+  const burned = Number(kcal) || 0;
+
+  return (
+    <Sheet
+      open
+      onClose={closeSheet}
+      size="auto"
+      title="Log exercise"
+      footer={
+        <Button
+          variant="primary"
+          full
+          disabled={burned <= 0}
+          onClick={async () => {
+            await logExercise({
+              day,
+              name: name.trim() || 'Exercise',
+              kcal: burned,
+              minutes: Number(minutes) || undefined,
+              source: 'manual',
+            });
+            closeSheet();
+            toast(`${formatCount(burned)} kcal burned`);
+          }}
+        >
+          {burned > 0 ? `Log ${formatCount(burned)} kcal burned` : 'Enter the calories burned'}
+        </Button>
+      }
+    >
+      <div className="space-y-4 p-4">
+        <Field label="Calories burned">
+          <Input
+            type="number"
+            inputMode="numeric"
+            value={kcal}
+            onChange={(e) => setKcal(e.target.value)}
+            placeholder="0"
+            className="h-14 text-center text-[26px] font-semibold"
+          />
+        </Field>
+
+        <Field label="Activity (optional)">
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Run, gym, cycling" />
+        </Field>
+
+        <Field
+          label="Minutes (optional)"
+          hint="Kept with the entry. The calorie figure is whatever you enter above — it is not estimated from duration, because a guess here quietly raises the day's allowance."
+        >
+          <Input type="number" inputMode="numeric" value={minutes} onChange={(e) => setMinutes(e.target.value)} placeholder="45" />
+        </Field>
       </div>
     </Sheet>
   );

@@ -3,7 +3,7 @@ import { useUi } from '../state/ui';
 import AddFood from './AddFood';
 import FoodDetail from './FoodDetail';
 import NutrientDetail from './NutrientDetail';
-import { CreateFood, LogWeight, QuickAddSheet } from './Sheets';
+import { CreateFood, LogExercise, LogWeight, QuickAddSheet } from './Sheets';
 
 // Scanner pulls in camera and decoding code; quick log pulls in the parser.
 // Neither belongs in the initial download.
@@ -37,6 +37,7 @@ export default function SheetHost() {
       {sheet.kind === 'label-scanner' && <LabelScanner mealId={sheet.mealId} day={sheet.day} />}
       {sheet.kind === 'nutrient-detail' && <NutrientDetail day={sheet.day} />}
       {sheet.kind === 'log-weight' && <LogWeight />}
+      {sheet.kind === 'log-exercise' && <LogExercise day={sheet.day} />}
       {sheet.kind === 'water' && <Water day={sheet.day} />}
       {sheet.kind === 'create-food' && (
         <CreateFood barcode={sheet.barcode} mealId={sheet.mealId} day={sheet.day} />

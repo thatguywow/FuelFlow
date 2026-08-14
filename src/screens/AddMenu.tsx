@@ -3,7 +3,7 @@ import { useUi } from '../state/ui';
 import { useTargets } from '../state/useTargets';
 import { cx } from '../ui/primitives';
 import { tapFeedback } from '../ui/motion';
-import { IconCompose, IconLabel, IconPlus, IconScan, IconSearch } from '../ui/icons';
+import { IconBolt, IconCompose, IconLabel, IconPlus, IconScan, IconSearch } from '../ui/icons';
 
 /**
  * The central add button and its menu.
@@ -93,6 +93,13 @@ export default function AddMenu() {
       detail: 'Write it out, log it in one go',
       icon: <IconCompose size={19} />,
       run: () => openSheet({ kind: 'quick-log', mealId, day }),
+    },
+    {
+      id: 'exercise',
+      label: 'Log exercise',
+      detail: 'Calories you burned',
+      icon: <IconBolt size={19} />,
+      run: () => openSheet({ kind: 'log-exercise', day }),
     },
     // Water is deliberately absent: it has its own row on the Today card, one
     // tap away, and having it in both places made the menu look padded.

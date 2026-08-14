@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useUi } from '../state/ui';
 import { useDay, useTargets } from '../state/useTargets';
@@ -24,6 +25,7 @@ import {
   IconSunrise,
   IconChevronLeft,
   IconChevronRight,
+  IconClose,
   IconDroplet,
   IconFlame,
   IconPlus,
@@ -174,29 +176,37 @@ export default function Today() {
       </Card>
       </section>
 
-      {/* ---------- Adaptive status ---------- */}
-      {showLearning && (
-        <button
-          onClick={() => useUi.getState().setTab('trends')}
-          className="mt-3 flex w-full items-start gap-3 rounded-(--radius-card) border border-border bg-brand-soft/40 p-3.5 text-left"
-        >
-          <IconSparkle size={18} className="mt-0.5 shrink-0 text-brand" />
-          <div>
-            <p className="text-[14px] font-medium">{confidence.headline}</p>
-            <p className="mt-0.5 text-[12.5px] leading-relaxed text-dim">{confidence.detail}</p>
-          </div>
-        </button>
+      {/*
+        Both of these are notices, not furniture.
+
+        They sat permanently in the middle of the home screen, between the
+        macros and the diary — the two things actually looked at every day.
+        "Learning your metabolism" says the same sentence for a fortnight, and
+        a warning you have read and accepted is just a wall you scroll past.
+        Each can now be dismissed, and stays dismissed until what it says
+        changes.
+      */}
+      {showLearning && !isDismissed(`learning:${confidence.level}`) && (
+        <Notice
+          tone="brand"
+          icon={<IconSparkle size={18} className="mt-0.5 shrink-0 text-brand" />}
+          title={confidence.headline}
+          detail={confidence.detail}
+          onOpen={() => useUi.getState().setTab('trends')}
+          onDismiss={() => dismiss(`learning:${confidence.level}`)}
+        />
       )}
 
-      {targets.warnings.length > 0 && (
-        <div className="mt-3 rounded-(--radius-card) border border-warn/30 bg-warn/10 p-3.5">
-          {targets.warnings.map((warning) => (
-            <p key={warning.code} className="text-[12.5px] leading-relaxed text-dim">
-              {warning.message}
-            </p>
-          ))}
-        </div>
-      )}
+      {targets.warnings
+        .filter((warning) => !isDismissed(`warn:${warning.code}`))
+        .map((warning) => (
+          <Notice
+            key={warning.code}
+            tone="warn"
+            detail={warning.message}
+            onDismiss={() => dismiss(`warn:${warning.code}`)}
+          />
+        ))}
 
       {/* ---------- Meals ---------- */}
       <section>
@@ -501,6 +511,89 @@ function amountLabel(entry: DiaryEntry, unitSystem: UnitSystem): string {
   const count = entry.portionCount ?? 1;
   const prefix = Math.abs(count - 1) < 0.01 ? '' : `${formatCount(count)} × `;
   return `${prefix}${shortPortion(label)} · ${grams}`;
+}
+
+/**
+ * Dismissed notices.
+ *
+ * Kept in localStorage rather than the database: this is a preference about
+ * what to look at, not data worth exporting or syncing, and losing it on a
+ * reinstall costs the user one tap.
+ *
+ * The key carries what the notice *said* — the confidence level, the warning
+ * code — so dismissing "you are two weeks in" does not also silence "your
+ * target is below the safe floor" later.
+ */
+const DISMISSED_KEY = 'ff.dismissedNotices';
+
+function readDismissed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function isDismissed(key: string): boolean {
+  return readDismissed().has(key);
+}
+
+function dismiss(key: string): void {
+  try {
+    const all = readDismissed();
+    all.add(key);
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...all]));
+    // Nothing observes localStorage, so nudge React into re-reading it.
+    window.dispatchEvent(new Event('ff-notice-dismissed'));
+  } catch {
+    /* storage disabled — the notice simply stays */
+  }
+}
+
+function Notice({
+  tone,
+  icon,
+  title,
+  detail,
+  onOpen,
+  onDismiss,
+}: {
+  tone: 'brand' | 'warn';
+  icon?: React.ReactNode;
+  title?: string;
+  detail: string;
+  onOpen?: () => void;
+  onDismiss: () => void;
+}) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const rerender = () => force((n) => n + 1);
+    window.addEventListener('ff-notice-dismissed', rerender);
+    return () => window.removeEventListener('ff-notice-dismissed', rerender);
+  }, []);
+
+  return (
+    <div
+      className={cx(
+        'flex items-start gap-3 rounded-(--radius-card) border p-3.5',
+        tone === 'brand' ? 'border-border bg-brand-soft/40' : 'border-warn/30 bg-warn/10',
+      )}
+    >
+      {icon}
+      <button onClick={onOpen} disabled={!onOpen} className="min-w-0 flex-1 text-left">
+        {title && <p className="text-[14px] font-medium">{title}</p>}
+        <p className={cx('text-[12.5px] leading-relaxed text-dim', title && 'mt-0.5')}>{detail}</p>
+      </button>
+      <button
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="-mr-1 -mt-1 shrink-0 rounded-full p-1.5 text-faint transition-colors hover:text-dim"
+      >
+        <IconClose size={15} />
+      </button>
+    </div>
+  );
 }
 
 function TodaySkeleton() {
