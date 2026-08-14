@@ -412,6 +412,34 @@ export async function openCameraPreview(
   };
 }
 
+/**
+ * Validates the modulo-10 check digit shared by EAN-8, UPC-A, EAN-13 and
+ * GTIN-14.
+ *
+ * Every one of those formats ends in a digit computed from the ones before it:
+ * walking right to left from the digit before it, each is weighted 3, 1, 3, 1
+ * and the total must bring the sum to a multiple of ten. A misread barcode
+ * almost never satisfies that, so this catches a bad decode locally instead of
+ * spending a network round trip to be told the product does not exist — and it
+ * lets the scanner keep looking rather than reporting a false "not found".
+ *
+ * Adapted from OpenNutriTracker (github.com/simonoppowa/OpenNutriTracker).
+ */
+export function isValidBarcode(code: string): boolean {
+  if (!/^\d+$/.test(code)) return false;
+  if (![8, 12, 13, 14].includes(code.length)) return false;
+
+  const digits = [...code].map(Number);
+  const check = digits[digits.length - 1]!;
+
+  let sum = 0;
+  for (let i = digits.length - 2, weightIsThree = true; i >= 0; i--, weightIsThree = !weightIsThree) {
+    sum += digits[i]! * (weightIsThree ? 3 : 1);
+  }
+
+  return (10 - (sum % 10)) % 10 === check;
+}
+
 /** Thrown when the camera is refused, so callers can offer a settings link. */
 export class CameraDeniedError extends Error {
   constructor() {

@@ -8,6 +8,7 @@ export type { SearchHit } from './local';
 export { recentFoods, suggestionsForMeal } from './local';
 export { parseQuickLog, type ParsedItem } from './parse';
 export { remoteDbInfo, warmRemoteDb } from './remote';
+import { nearDuplicateKey, relevance } from './relevance';
 
 /**
  * The tiered lookup chain.
@@ -88,7 +89,7 @@ export async function searchTiered(
   ]);
 
   if (options.signal?.aborted) return;
-  onResults({ hits: merge(local, remote, online).slice(0, limit), pending: false, skipped });
+  onResults({ hits: merge(trimmed, local, remote, online).slice(0, limit), pending: false, skipped });
 }
 
 /** Promise-shaped wrapper for callers that do not want progressive updates. */
@@ -101,11 +102,34 @@ export async function search(query: string, options: SearchOptions = {}): Promis
 }
 
 /**
- * Deduplicate across tiers. The same product routinely appears in the local
- * cache, the branded snapshot and the live API; the highest-scoring copy wins
- * and, because local copies score higher, your own portion sizes survive.
+ * Merge the tiers into one ordering.
+ *
+ * Three things happen here, in order.
+ *
+ * Exact duplicates collapse first — the same product routinely appears in the
+ * local cache, the branded snapshot and the live API under the same barcode.
+ * The highest-scoring copy wins, and because local copies score higher your
+ * own portion sizes survive.
+ *
+ * Then near-duplicates: the same real food often exists as *separate* records
+ * in different sources with different codes, so the exact key never catches
+ * them. Matching is on normalised name and brand and nothing looser, because
+ * merging two foods that merely read alike would hide one of them.
+ *
+ * Finally the order: by each tier's own score, with the user's own foods held
+ * above the rest — something you saved yourself is nearly always what you
+ * meant.
+ *
+ * Ordering by pure text relevance was tried here and measured worse. It looks
+ * like the principled choice, since the tiers do not score on a common scale,
+ * but the local score is not just a text match: it carries the penalties that
+ * push prepared products below the plain food, the trust ordering between
+ * sources, and how often you actually eat something. Discarding all of that
+ * put "Bread, egg" above "Egg, whole, raw" and deli rolls back above chicken
+ * breast. Relevance is kept for the one job it does better — choosing which
+ * copy of a duplicate to show.
  */
-function merge(...lists: SearchHit[][]): SearchHit[] {
+function merge(query: string, ...lists: SearchHit[][]): SearchHit[] {
   const byKey = new Map<string, SearchHit>();
   for (const list of lists) {
     for (const hit of list) {
@@ -114,7 +138,48 @@ function merge(...lists: SearchHit[][]): SearchHit[] {
       if (!existing || hit.score > existing.score) byKey.set(key, hit);
     }
   }
-  return [...byKey.values()].sort((a, b) => b.score - a.score);
+
+  const scored = [...byKey.values()].map((hit) => ({
+    hit,
+    relevance: relevance(hit.food.name, hit.food.brand, query),
+  }));
+
+  // Own content is never merged away, even if a remote record shares its name.
+  const isOwn = (hit: SearchHit) =>
+    hit.food.source === 'user' || hit.food.source === 'recipe' || hit.food.source === 'label';
+
+  const own = scored.filter((entry) => isOwn(entry.hit));
+  const rest = collapseNearDuplicates(scored.filter((entry) => !isOwn(entry.hit)));
+
+  const byScore = (a: { hit: SearchHit }, b: { hit: SearchHit }) => b.hit.score - a.hit.score;
+  return [...own.sort(byScore), ...rest.sort(byScore)].map((entry) => entry.hit);
+}
+
+/** Keeps the best-matching copy of each distinct food, in first-seen order. */
+function collapseNearDuplicates<T extends { hit: SearchHit; relevance: number }>(entries: T[]): T[] {
+  const groups = new Map<string, T>();
+  const ungrouped: T[] = [];
+  const order: string[] = [];
+
+  for (const entry of entries) {
+    const key = nearDuplicateKey(entry.hit.food.name, entry.hit.food.brand);
+    if (key === null) {
+      ungrouped.push(entry);
+      continue;
+    }
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, entry);
+      order.push(key);
+      continue;
+    }
+    // Same food from two sources: keep whichever matches the query better,
+    // and on a tie the one that arrived first — tiers are already ordered by
+    // how much they can be trusted.
+    if (entry.relevance > existing.relevance) groups.set(key, entry);
+  }
+
+  return [...order.map((key) => groups.get(key)!), ...ungrouped];
 }
 
 function identityKey(food: Food): string {

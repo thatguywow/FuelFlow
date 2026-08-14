@@ -5,6 +5,7 @@ import type { DayKey } from '../core/dates';
 import {
   cameraPermission,
   hasNativeScannerFallback,
+  isValidBarcode,
   openAppSettings,
   requestCameraPermission,
   scanFromVideo,
@@ -48,6 +49,12 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
 
   const resolve = async (barcode: string) => {
     if (busyRef.current) return;
+
+    // A barcode carries its own check digit, so a misread can be rejected here
+    // rather than sent off to be looked up. Keep scanning instead of stopping
+    // the camera to report a "not found" that was really a bad frame.
+    if (!isValidBarcode(barcode)) return;
+
     busyRef.current = true;
     handleRef.current?.stop();
     setPhase('looking-up');
