@@ -120,6 +120,22 @@ async function getWorker(): Promise<WorkerHttpvfs | null> {
   return resolved;
 }
 
+/**
+ * Start loading the branded database before anything asks it a question.
+ *
+ * A barcode lookup is fast once the engine is up, but the first one pays for
+ * the manifest, a 1.2 MB WebAssembly runtime and the index pages it has to read
+ * — all after the code has already been decoded, which is exactly when someone
+ * is watching and waiting. Called when the scanner opens, that cost overlaps
+ * the second or two spent aiming the camera instead of following it.
+ *
+ * Safe to call repeatedly: the worker promise is memoised, so this is a no-op
+ * once anything has already started it.
+ */
+export function warmRemoteDb(): void {
+  void getWorker().catch(() => undefined);
+}
+
 export function remoteDbInfo(): RemoteDbManifest | null {
   return manifest;
 }

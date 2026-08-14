@@ -14,7 +14,7 @@ import {
 import { nutrientStatus } from '../core/dri';
 import { db, type Food } from '../db/schema';
 import { deleteEntry, logFood, toggleFavorite, updateEntryAmount } from '../db/repo';
-import { displayName } from '../core/foodName';
+import { displayName, portionStatesItsMass, shortPortion } from '../core/foodName';
 import { formatFoodMass } from '../core/units';
 import { Button, Card, Divider, Input, Sheet, cx } from '../ui/primitives';
 import { IconChevronDown, IconStar, IconTrash } from '../ui/icons';
@@ -147,7 +147,7 @@ export default function FoodDetail({
               zero width and pushing it off the screen edge. That, not the
               padding, is why the portion text kept ending up under the arrow.
             */}
-            <div className="w-24 shrink-0">
+            <div className="w-32 shrink-0">
               <Input
                 type="number"
                 inputMode="decimal"
@@ -191,7 +191,12 @@ export default function FoodDetail({
               >
                 {portions.map((p, index) => (
                   <option key={`${p.label}-${index}`} value={index}>
-                    {p.label} · {formatFoodMass(p.grams, unitSystem)}
+                    {/* A portion called "100 g" does not need "· 100 g" after
+                        it, and the derivation in brackets is provenance rather
+                        than the thing being chosen. */}
+                    {portionStatesItsMass(p.label)
+                      ? formatFoodMass(p.grams, unitSystem)
+                      : `${shortPortion(p.label)} · ${formatFoodMass(p.grams, unitSystem)}`}
                   </option>
                 ))}
               </select>

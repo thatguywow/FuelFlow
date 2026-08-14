@@ -13,7 +13,7 @@ import { EnergyRing, MacroRow, type MacroBarDatum } from '../ui/charts';
 import { tapFeedback, useAnimatedNumber, useStagger } from '../ui/motion';
 import { useSwipe } from '../ui/gestures';
 import { formatCount } from '../core/format';
-import { displayName } from '../core/foodName';
+import { displayName, portionStatesItsMass, shortPortion } from '../core/foodName';
 import { formatFoodMass, formatVolume, type UnitSystem } from '../core/units';
 import {
   IconApple,
@@ -494,12 +494,13 @@ function amountLabel(entry: DiaryEntry, unitSystem: UnitSystem): string {
   const label = entry.portionLabel?.trim();
   if (!label) return grams;
 
-  // "100 g", "30 ml", "1 g" — a bare weight or volume.
-  if (/^[\d.,]+\s*(g|ml|kg|l)$/i.test(label)) return grams;
+  // "100 g", "30 ml", "1 g" — a bare weight or volume says nothing the total
+  // does not, so it is replaced rather than repeated.
+  if (portionStatesItsMass(label)) return grams;
 
   const count = entry.portionCount ?? 1;
   const prefix = Math.abs(count - 1) < 0.01 ? '' : `${formatCount(count)} × `;
-  return `${prefix}${label} · ${grams}`;
+  return `${prefix}${shortPortion(label)} · ${grams}`;
 }
 
 function TodaySkeleton() {

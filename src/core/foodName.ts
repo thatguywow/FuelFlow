@@ -15,6 +15,31 @@
  * exactly as it was. A wrong name on the right food is worse than an ugly one.
  */
 
+/**
+ * A portion label short enough to read in a picker.
+ *
+ * USDA measure names carry their whole derivation — "breast, bone removed
+ * (yield from 1 lb ready-to-cook chicken)" — which is a paragraph in a control
+ * about two words wide. The parenthetical is provenance, not what you are
+ * choosing, so it goes.
+ */
+export function shortPortion(label: string): string {
+  const withoutAside = label.replace(/\s*\([^)]*\)/g, '').trim();
+  const base = withoutAside.length > 0 ? withoutAside : label.trim();
+  // Still long? Keep the first two clauses — "breast, bone removed" says it.
+  const clauses = base.split(',').map((c) => c.trim()).filter(Boolean);
+  if (clauses.length > 2) return clauses.slice(0, 2).join(', ');
+  return base;
+}
+
+/**
+ * True when a portion's name already states its weight, so printing the mass
+ * beside it would just say the same thing twice — "100 g · 100 g".
+ */
+export function portionStatesItsMass(label: string): boolean {
+  return /^[\d.,]+\s*(g|ml|kg|l|oz|lb)$/i.test(label.trim());
+}
+
 /** How the food was prepared. These read naturally after a comma. */
 const PREPARATIONS = new Set([
   'raw',

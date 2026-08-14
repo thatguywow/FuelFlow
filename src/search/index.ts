@@ -7,7 +7,7 @@ import { fetchByBarcode, isOnline, searchOnline } from './off';
 export type { SearchHit } from './local';
 export { recentFoods, suggestionsForMeal } from './local';
 export { parseQuickLog, type ParsedItem } from './parse';
-export { remoteDbInfo } from './remote';
+export { remoteDbInfo, warmRemoteDb } from './remote';
 
 /**
  * The tiered lookup chain.

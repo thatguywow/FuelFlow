@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useUi } from '../state/ui';
-import { lookupBarcode } from '../search';
+import { lookupBarcode, warmRemoteDb } from '../search';
 import type { DayKey } from '../core/dates';
 import {
   cameraPermission,
@@ -132,6 +132,12 @@ export default function Scanner({ mealId, day }: { mealId: string; day: DayKey }
     }
     await startCamera();
   };
+
+  // Start the branded database loading while the camera is still being aimed,
+  // so a decode does not then wait on a 1.2 MB runtime download.
+  useEffect(() => {
+    warmRemoteDb();
+  }, []);
 
   useEffect(() => {
     void begin();
