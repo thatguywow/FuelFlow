@@ -6,6 +6,7 @@ import { N } from '../core/nutrients';
 import { Button, EmptyState, Input, List, SectionLabel, Segmented, Sheet, cx } from '../ui/primitives';
 import { IconPlus, IconSearch } from '../ui/icons';
 import { formatCount } from '../core/format';
+import { displayName } from '../core/foodName';
 import type { FoodSource } from '../db/schema';
 
 /** Provenance colours for the leading dot on each result. */
@@ -36,7 +37,15 @@ export default function AddFood({ mealId, day }: { mealId: string; day: DayKey }
   const closeSheet = useUi((s) => s.closeSheet);
   const openSheet = useUi((s) => s.openSheet);
 
-  const [query, setQuery] = useState('');
+  // Seeded from the store so stepping back from a food lands on the search you
+  // had, not an empty box — this sheet is rebuilt from scratch when reopened.
+  const storedQuery = useUi((s) => s.foodQuery);
+  const setStoredQuery = useUi((s) => s.setFoodQuery);
+  const [query, setQueryState] = useState(storedQuery);
+  const setQuery = (value: string) => {
+    setQueryState(value);
+    setStoredQuery(value);
+  };
   const [filter, setFilter] = useState<Filter>('all');
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [pending, setPending] = useState(false);
@@ -75,7 +84,21 @@ export default function AddFood({ mealId, day }: { mealId: string; day: DayKey }
     };
   }, [query, filter]);
 
-  const shown = query.trim().length === 0 && hits.length === 0 ? suggestions : hits;
+  /**
+   * The filter is applied here as well as being passed to the search.
+   *
+   * Two paths bypass it entirely: the meal suggestions below, and the recent
+   * foods `searchTiered` returns for an empty query. Both ignore `sources`, so
+   * "My foods" and "Recipes" showed the same list as "All" until something was
+   * typed — the tabs looked broken because, for that state, they were.
+   */
+  const shown = useMemo(() => {
+    const base = query.trim().length === 0 && hits.length === 0 ? suggestions : hits;
+    const sources = FILTER_SOURCES[filter];
+    if (!sources) return base;
+    const allowed = new Set<FoodSource>(sources);
+    return base.filter((hit) => allowed.has(hit.food.source));
+  }, [query, hits, suggestions, filter]);
 
   const grouped = useMemo(() => {
     const order: SearchHit['tier'][] = ['personal', 'core', 'remote', 'online'];
@@ -177,9 +200,17 @@ export default function AddFood({ mealId, day }: { mealId: string; day: DayKey }
                     title={group.label}
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[14.5px]">{hit.food.name}</div>
+                    {/* USDA writes its descriptions as database keys — every
+                        qualifier appended to the head noun. The headline is
+                        rearranged into what a person would recognise; the
+                        cataloguing detail moves to the line beneath. */}
+                    <div className="truncate text-[14.5px]">{displayName(hit.food.name).primary}</div>
                     <div className="mt-0.5 truncate text-[12px] text-faint">
-                      {[hit.food.brand, hit.suggestedGrams ? `${Math.round(hit.suggestedGrams)} g` : null]
+                      {[
+                        hit.food.brand,
+                        displayName(hit.food.name).detail,
+                        hit.suggestedGrams ? `${Math.round(hit.suggestedGrams)} g` : null,
+                      ]
                         .filter(Boolean)
                         .join(' · ')}
                     </div>

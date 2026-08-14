@@ -206,9 +206,13 @@ export const IconClock = (p: IconProps) => (
   </Svg>
 );
 
-export const IconStar = (p: IconProps) => (
+/** Fill carries the state: an outline star and a solid one read at a glance. */
+export const IconStar = ({ filled, ...p }: IconProps & { filled?: boolean }) => (
   <Svg {...p}>
-    <path d="m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.6-4.8 2.6.9-5.4L4.2 9.7l5.4-.8Z" />
+    <path
+      d="m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.6-4.8 2.6.9-5.4L4.2 9.7l5.4-.8Z"
+      fill={filled ? 'currentColor' : 'none'}
+    />
   </Svg>
 );
 

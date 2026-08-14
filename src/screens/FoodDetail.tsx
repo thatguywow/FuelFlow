@@ -14,6 +14,7 @@ import {
 import { nutrientStatus } from '../core/dri';
 import { db, type Food } from '../db/schema';
 import { deleteEntry, logFood, toggleFavorite, updateEntryAmount } from '../db/repo';
+import { displayName } from '../core/foodName';
 import { Button, Card, Divider, Input, Sheet, cx } from '../ui/primitives';
 import { IconStar, IconTrash } from '../ui/icons';
 
@@ -35,6 +36,9 @@ export default function FoodDetail({
   entryId?: string;
 }) {
   const closeSheet = useUi((s) => s.closeSheet);
+  // Dismissing this sheet returns to whatever opened it — usually the search
+  // results — so picking a second food does not mean starting the search again.
+  const backSheet = useUi((s) => s.backSheet);
   const toast = useUi((s) => s.toast);
   const derived = useTargets();
 
@@ -74,11 +78,15 @@ export default function FoodDetail({
   return (
     <Sheet
       open
-      onClose={closeSheet}
+      onClose={backSheet}
       title={
         <div className="min-w-0">
-          <h2 className="truncate text-[17px] font-semibold">{food.name}</h2>
-          {food.brand && <p className="truncate text-[12.5px] text-faint">{food.brand}</p>}
+          <h2 className="truncate text-[17px] font-semibold">{displayName(food.name).primary}</h2>
+          {(food.brand || displayName(food.name).detail) && (
+            <p className="truncate text-[12.5px] text-faint">
+              {[food.brand, displayName(food.name).detail].filter(Boolean).join(' · ')}
+            </p>
+          )}
         </div>
       }
       footer={
@@ -136,10 +144,14 @@ export default function FoodDetail({
               className="w-24 text-center text-[17px] font-semibold"
               aria-label="Amount"
             />
+            {/* The dropdown indicator is drawn by the platform *over* the
+                select's own box, so without room reserved on the right it sits
+                on top of the portion text. `truncate` then clips against the
+                arrow rather than before it. */}
             <select
               value={portionIndex}
               onChange={(event) => setPortionIndex(Number(event.target.value))}
-              className="h-11 flex-1 rounded-xl border border-border bg-surface-2 px-3 text-[15px] text-text focus:border-brand focus:outline-none"
+              className="h-11 min-w-0 flex-1 truncate rounded-xl border border-border bg-surface-2 py-0 pl-3 pr-9 text-[15px] text-text focus:border-brand focus:outline-none"
               aria-label="Portion"
             >
               {portions.map((p, index) => (
@@ -162,8 +174,11 @@ export default function FoodDetail({
                 usage?.favorite ? 'bg-brand-soft text-brand' : 'text-faint hover:text-dim',
               )}
             >
-              <IconStar size={15} />
-              {usage?.favorite ? 'Favourite' : 'Favourite'}
+              {/* The label was the same string in both branches, so the only
+                  feedback was a faint background change and the control looked
+                  like it did nothing. */}
+              <IconStar size={15} filled={usage?.favorite} />
+              {usage?.favorite ? 'Favourited' : 'Favourite'}
             </button>
           </div>
 

@@ -43,6 +43,15 @@ interface UiState {
   /** The local calendar date as last observed, so a rollover can be detected. */
   todayKey: DayKey;
   sheet: Sheet;
+  /** Sheets this one was opened on top of, most recent last. */
+  sheetHistory: Sheet[];
+  /**
+   * The last food search, kept outside the sheet so stepping back to it
+   * restores what was typed. Sheets are re-created from their descriptor when
+   * reopened, so any state held inside the component is gone by then — which
+   * made "back" land on an empty search box.
+   */
+  foodQuery: string;
   toasts: Toast[];
   onboardingComplete: boolean;
   /** The central add-menu, which is chrome rather than a sheet. */
@@ -54,7 +63,11 @@ interface UiState {
   /** Re-read the wall clock and roll the diary over at local midnight. */
   syncToday: () => void;
   openSheet: (sheet: Sheet) => void;
+  /** Dismiss the whole stack. */
   closeSheet: () => void;
+  /** Return to the sheet this one was opened from, if there was one. */
+  backSheet: () => void;
+  setFoodQuery: (query: string) => void;
   setAddMenu: (open: boolean) => void;
   toast: (message: string, options?: Omit<Toast, 'id' | 'message'>) => void;
   dismissToast: (id: number) => void;
@@ -68,6 +81,8 @@ export const useUi = create<UiState>((set, get) => ({
   day: toDayKey(),
   todayKey: toDayKey(),
   sheet: { kind: 'none' },
+  sheetHistory: [],
+  foodQuery: '',
   toasts: [],
   onboardingComplete: false,
   addMenuOpen: false,
@@ -96,8 +111,31 @@ export const useUi = create<UiState>((set, get) => ({
 
   // Opening a sheet always dismisses the add menu; leaving it expanded behind a
   // sheet means it is still open when the sheet closes.
-  openSheet: (sheet) => set({ sheet, addMenuOpen: false }),
-  closeSheet: () => set({ sheet: { kind: 'none' } }),
+  //
+  // The sheet it replaces is remembered so a nested one can step back to it.
+  // Opening a food from search used to overwrite the search outright, so
+  // dismissing the food closed everything and a second helping meant starting
+  // the search again from the plus button.
+  openSheet: (sheet) =>
+    set((state) => ({
+      sheet,
+      sheetHistory:
+        state.sheet.kind === 'none' ? [] : [...state.sheetHistory, state.sheet].slice(-4),
+      addMenuOpen: false,
+    })),
+
+  /** Dismiss everything, for when the task is finished. */
+  closeSheet: () => set({ sheet: { kind: 'none' }, sheetHistory: [], foodQuery: '' }),
+
+  setFoodQuery: (foodQuery) => set({ foodQuery }),
+
+  /** Step back one sheet, or dismiss if this is the only one. */
+  backSheet: () =>
+    set((state) => {
+      const previous = state.sheetHistory[state.sheetHistory.length - 1];
+      if (!previous) return { sheet: { kind: 'none' as const }, sheetHistory: [] };
+      return { sheet: previous, sheetHistory: state.sheetHistory.slice(0, -1) };
+    }),
   setAddMenu: (addMenuOpen) => set({ addMenuOpen }),
 
   toast: (message, options) => {
