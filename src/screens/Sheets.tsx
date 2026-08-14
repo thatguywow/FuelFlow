@@ -4,7 +4,8 @@ import { useTargets } from '../state/useTargets';
 import { toDayKey, type DayKey } from '../core/dates';
 import { N } from '../core/nutrients';
 import { fromKg, toKg } from '../core/units';
-import { logExercise, logWeight, quickAdd, upsertFood, logFood } from '../db/repo';
+import { deleteEntry, getFood, logExercise, logWeight, moveEntry, quickAdd, restoreEntry, upsertFood, logFood } from '../db/repo';
+import { db } from '../db/schema';
 import { formatCount } from '../core/format';
 import { Button, Card, Field, Input, Sheet, cx } from '../ui/primitives';
 
@@ -147,6 +148,99 @@ export function LogExercise({ day }: { day: DayKey }) {
         >
           <Input type="number" inputMode="numeric" value={minutes} onChange={(e) => setMinutes(e.target.value)} placeholder="45" />
         </Field>
+      </div>
+    </Sheet>
+  );
+}
+
+/**
+ * What you can do to a diary entry, reached by holding it.
+ *
+ * Delete used to be a trash icon revealed on hover — which a phone does not
+ * have, so on the device it was invisible and the only way to remove something
+ * was to open it and find the button inside. Moving an entry between meals was
+ * not possible at all: logging lunch into breakfast meant deleting it and
+ * starting again.
+ */
+export function EntryActions({
+  entryId,
+  entryName,
+  mealId,
+  day,
+}: {
+  entryId: string;
+  entryName: string;
+  mealId: string;
+  day: DayKey;
+}) {
+  const closeSheet = useUi((s) => s.closeSheet);
+  const openSheet = useUi((s) => s.openSheet);
+  const toast = useUi((s) => s.toast);
+  const derived = useTargets();
+
+  const [moving, setMoving] = useState(false);
+
+  return (
+    <Sheet open onClose={closeSheet} size="auto" title={entryName}>
+      <div className="space-y-2 p-4">
+        {moving ? (
+          <Field label="Move to">
+            <div className="flex flex-wrap gap-1.5">
+              {(derived?.profile.meals ?? []).map((meal) => (
+                <button
+                  key={meal.id}
+                  disabled={meal.id === mealId}
+                  onClick={async () => {
+                    await moveEntry(entryId, day, meal.id);
+                    closeSheet();
+                    toast(`Moved to ${meal.name}`);
+                  }}
+                  className={cx(
+                    'rounded-full px-3.5 py-2 text-[13.5px] transition-colors',
+                    meal.id === mealId
+                      ? 'bg-surface-3 text-faint'
+                      : 'bg-surface-2 text-dim hover:bg-surface-3',
+                  )}
+                >
+                  {meal.name}
+                  {meal.id === mealId && ' · here'}
+                </button>
+              ))}
+            </div>
+          </Field>
+        ) : (
+          <>
+            <Button
+              full
+              onClick={async () => {
+                const entry = await db.entries.get(entryId);
+                const food = entry?.foodId ? await getFood(entry.foodId) : undefined;
+                if (food) openSheet({ kind: 'food-detail', food, mealId, day, entryId });
+                else toast('This entry has no food to edit');
+              }}
+            >
+              Edit amount
+            </Button>
+
+            <Button full onClick={() => setMoving(true)}>
+              Move to another meal
+            </Button>
+
+            <Button
+              variant="danger"
+              full
+              onClick={async () => {
+                await deleteEntry(entryId);
+                closeSheet();
+                toast(`Removed ${entryName}`, {
+                  action: { label: 'Undo', run: () => void restoreEntry(entryId) },
+                });
+              }}
+            >
+              Delete
+            </Button>
+          </>
+        )}
       </div>
     </Sheet>
   );

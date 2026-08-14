@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useUi } from '../state/ui';
 import { useDay, useTargets } from '../state/useTargets';
 import { formatDayLabel, toDayKey } from '../core/dates';
 import { N, sumNutrients } from '../core/nutrients';
 import { describeConfidence } from '../core/adaptive';
-import { addWater, currentStreak, deleteEntry, restoreEntry, setDayComplete } from '../db/repo';
+import { addWater, currentStreak, setDayComplete } from '../db/repo';
 import { getFood } from '../db/repo';
 import type { DiaryEntry } from '../db/schema';
 import type { DayKey } from '../core/dates';
@@ -28,10 +28,10 @@ import {
   IconClose,
   IconDroplet,
   IconFlame,
+  IconMore,
   IconPlus,
   IconSparkle,
   IconTarget,
-  IconTrash,
 } from '../ui/icons';
 
 export default function Today() {
@@ -382,9 +382,22 @@ function EntryRow({
   day: DayKey;
 }) {
   const openSheet = useUi((s) => s.openSheet);
-  const toast = useUi((s) => s.toast);
   const unitSystem = useTargets()?.profile.display.unitSystem ?? 'metric';
   const shown = useStagger(index, 35);
+
+  // A long press must not also fire the tap that follows it, or holding a row
+  // would open the actions and the food detail on top of each other.
+  const pressTimer = useRef<number | undefined>(undefined);
+  const longPressed = useRef(false);
+
+  const openActions = () =>
+    openSheet({
+      kind: 'entry-actions',
+      entryId: entry.id,
+      entryName: displayName(entry.name).primary,
+      mealId,
+      day,
+    });
 
   return (
     <div
@@ -394,13 +407,40 @@ function EntryRow({
       )}
     >
       {index > 0 && <div className="ml-4 h-px bg-border" />}
+      {/*
+        Tap opens the entry; holding it opens what else you can do.
+
+        Delete used to be a trash icon revealed on hover, which a phone does
+        not have — on the device it was simply invisible, and the only route to
+        removing something was to open it and hunt for the button inside. The
+        overflow button stays for pointer users, who have no reason to know
+        that holding a row does anything.
+      */}
       <div className="group flex items-center gap-2 pr-2">
         <button
           onClick={async () => {
+            if (longPressed.current) {
+              longPressed.current = false;
+              return;
+            }
             const food = entry.foodId ? await getFood(entry.foodId) : undefined;
             if (food) openSheet({ kind: 'food-detail', food, mealId, day, entryId: entry.id });
           }}
-          className="min-w-0 flex-1 px-4 py-3 text-left transition-colors hover:bg-surface-2"
+          onPointerDown={() => {
+            longPressed.current = false;
+            pressTimer.current = window.setTimeout(() => {
+              longPressed.current = true;
+              void tapFeedback();
+              openActions();
+            }, 450);
+          }}
+          onPointerUp={() => window.clearTimeout(pressTimer.current)}
+          onPointerLeave={() => window.clearTimeout(pressTimer.current)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            openActions();
+          }}
+          className="min-w-0 flex-1 select-none px-4 py-3 text-left transition-colors hover:bg-surface-2"
         >
           <div className="truncate text-[15px]">{displayName(entry.name).primary}</div>
           <div className="mt-0.5 truncate text-[12.5px] text-faint">
@@ -413,17 +453,8 @@ function EntryRow({
           {formatCount(entry.nutrients[N.ENERGY] ?? 0)}
         </span>
 
-        <IconButton
-          label={`Remove ${entry.name}`}
-          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-          onClick={async () => {
-            await deleteEntry(entry.id);
-            toast(`Removed ${entry.name}`, {
-              action: { label: 'Undo', run: () => void restoreEntry(entry.id) },
-            });
-          }}
-        >
-          <IconTrash size={16} />
+        <IconButton label={`Options for ${entry.name}`} onClick={openActions}>
+          <IconMore size={16} />
         </IconButton>
       </div>
     </div>

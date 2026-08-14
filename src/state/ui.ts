@@ -24,6 +24,7 @@ export type Sheet =
   | { kind: 'nutrient-detail'; day: DayKey }
   | { kind: 'log-weight' }
   | { kind: 'log-exercise'; day: DayKey }
+  | { kind: 'entry-actions'; entryId: string; entryName: string; mealId: string; day: DayKey }
   | { kind: 'water'; day: DayKey }
   | { kind: 'create-food'; barcode?: string; mealId?: string; day?: DayKey }
   | { kind: 'recipe-builder'; recipeId?: string }
