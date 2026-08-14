@@ -671,6 +671,29 @@ export function parseNutritionLabel(lines: string[]): ParsedLabel {
     if (Number.isFinite(value)) out[key] = value * scale;
   }
 
+  /*
+   * Second pass, for panels printed as prose rather than as a grid.
+   *
+   * Small jars and sachets have no room for two columns, so the figures run on
+   * in a sentence — and OCR wraps that sentence wherever the packet does,
+   * leaving "of which sugars" on one line and "56.3 g" on the next. The strict
+   * patterns above refuse to cross a newline on purpose: in a *table* that is
+   * what stops a nutrient with no value of its own stealing the figure from the
+   * row beneath it.
+   *
+   * So the newlines are removed and the same patterns run again — but only to
+   * fill values the strict pass could not find. Anything it did find wins,
+   * which keeps the table case exactly as safe as it was.
+   */
+  const unwrapped = text.replace(/\n+/g, ' ');
+  for (const { key, pattern, scale = 1 } of LABEL_PATTERNS) {
+    if (out[key] !== undefined) continue;
+    const match = pattern.exec(unwrapped);
+    if (!match?.[1]) continue;
+    const value = toNumber(match[1]);
+    if (Number.isFinite(value)) out[key] = value * scale;
+  }
+
   const kcal = readEnergyKcal(text);
   if (kcal !== undefined && Number.isFinite(kcal)) out.kcal = kcal;
 
