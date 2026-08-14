@@ -59,7 +59,6 @@ export default function FoodDetail({
       : Math.max(0, portions.findIndex((p) => p.preferred));
 
   const [portionIndex, setPortionIndex] = useState(initialPortion);
-  const [portionOpen, setPortionOpen] = useState(false);
   const unitSystem = derived?.profile.display.unitSystem ?? 'metric';
   const [count, setCount] = useState(() => {
     const portion = portions[initialPortion];
@@ -137,76 +136,71 @@ export default function FoodDetail({
         {/* ---------- Amount ---------- */}
         <Card className="space-y-3">
           <div className="flex gap-2">
-            <Input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step="any"
-              value={String(count)}
-              onChange={(event) => setCount(Number(event.target.value) || 0)}
-              className="w-24 text-center text-[17px] font-semibold"
-              aria-label="Amount"
-            />
             {/*
-              A button and a list, not a <select>.
+              The width lives on a wrapper, not on the Input.
 
-              The native control rendered as an empty box with an arrow on the
-              Android WebView while showing its text correctly in every desktop
-              browser, so the fault could not be reproduced — or a fix verified
-              — anywhere the app is actually testable. Two attempts at patching
-              its CSS shipped without fixing it. Drawing the control ourselves
-              removes the platform from the question entirely, and it now
-              matches the rest of the app instead of the OS.
+              `Input` carries `w-full` in its own base classes, and a `w-24`
+              passed through className loses to it — both are width utilities,
+              so the one emitted later in the compiled sheet wins regardless of
+              the order they appear in the attribute. The amount field was
+              therefore taking the entire row, squeezing the portion select to
+              zero width and pushing it off the screen edge. That, not the
+              padding, is why the portion text kept ending up under the arrow.
             */}
-            <button
-              type="button"
-              onClick={() => setPortionOpen((open) => !open)}
-              aria-haspopup="listbox"
-              aria-expanded={portionOpen}
-              className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-surface-2 pl-3 pr-2.5 text-left text-[15px] text-text transition-colors hover:border-border-strong"
-            >
-              <span className="min-w-0 flex-1 truncate">
-                {portion.label} · {formatFoodMass(portion.grams, unitSystem)}
-              </span>
+            <div className="w-24 shrink-0">
+              <Input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="any"
+                value={String(count)}
+                onChange={(event) => setCount(Number(event.target.value) || 0)}
+                className="text-center text-[17px] font-semibold"
+                aria-label="Amount"
+              />
+            </div>
+            {/*
+              The original control, with the one thing that was wrong with it
+              fixed: the platform drew its dropdown arrow *over* the select's
+              own box, so a long portion name ran underneath it.
+
+              `appearance-none` removes the platform's arrow and we draw our
+              own into padding reserved for it, which is the only way the text
+              and the indicator cannot occupy the same pixels. The select itself
+              stays — its picker is the one part of this the OS does better than
+              we would, and replacing the whole control was an overreaction to a
+              spacing bug.
+
+              Note there is no `truncate`: on the Android WebView `text-overflow`
+              on a <select> blanks the selected option instead of ellipsising
+              it. A long name is allowed to be clipped by the padding edge.
+
+              `min-w-0` on the select is what actually fixed the overlap. A
+              <select> takes an intrinsic minimum width from its longest option,
+              so without it the control grew wider than its own wrapper and its
+              text ran on underneath the arrow — which is positioned against the
+              wrapper. `w-full` alone does not stop that, which is why reserving
+              padding looked like it had no effect.
+            */}
+            <div className="relative min-w-0 flex-1">
+              <select
+                value={portionIndex}
+                onChange={(event) => setPortionIndex(Number(event.target.value))}
+                className="h-11 w-full min-w-0 appearance-none rounded-xl border border-border bg-surface-2 pl-3 pr-10 text-[15px] text-text focus:border-brand focus:outline-none"
+                aria-label="Portion"
+              >
+                {portions.map((p, index) => (
+                  <option key={`${p.label}-${index}`} value={index}>
+                    {p.label} · {formatFoodMass(p.grams, unitSystem)}
+                  </option>
+                ))}
+              </select>
               <IconChevronDown
                 size={18}
-                className={cx(
-                  'shrink-0 text-faint transition-transform duration-200',
-                  portionOpen && 'rotate-180',
-                )}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-faint"
               />
-            </button>
-          </div>
-
-          {portionOpen && (
-            <div
-              role="listbox"
-              aria-label="Portion"
-              className="no-scrollbar max-h-56 overflow-y-auto rounded-xl border border-border bg-surface-2"
-            >
-              {portions.map((p, index) => (
-                <button
-                  key={`${p.label}-${index}`}
-                  role="option"
-                  aria-selected={index === portionIndex}
-                  onClick={() => {
-                    setPortionIndex(index);
-                    setPortionOpen(false);
-                  }}
-                  className={cx(
-                    'flex w-full items-center gap-2 px-3 py-2.5 text-left text-[14.5px] transition-colors',
-                    index > 0 && 'border-t border-border',
-                    index === portionIndex ? 'bg-brand-soft text-brand' : 'hover:bg-surface-3',
-                  )}
-                >
-                  <span className="min-w-0 flex-1 truncate">{p.label}</span>
-                  <span className="shrink-0 text-[13px] text-faint tnum">
-                    {formatFoodMass(p.grams, unitSystem)}
-                  </span>
-                </button>
-              ))}
             </div>
-          )}
+          </div>
 
           <div className="flex items-center justify-between">
             <span className="text-[13px] text-faint tnum">

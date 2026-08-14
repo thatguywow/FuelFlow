@@ -411,14 +411,62 @@ export interface ParsedLabel {
   sodiumMg?: number;
 }
 
+/**
+ * The words each nutrient goes by, across the languages an EU label carries.
+ *
+ * A pack sold in Greece prints its table in three or four languages at once,
+ * and OCR returns all of them interleaved. Matching only the English word meant
+ * a line reading "Λιπαρά / Fat / Grassi 12,3 g" was found only if "Fat" landed
+ * near enough to the number — and on a multi-column layout it usually did not.
+ * Every synonym is tried, so whichever language sits closest to the figure wins.
+ *
+ * Greek is included even though ML Kit's Latin recogniser cannot read Greek
+ * script: these also match text typed by hand, and a label whose Greek column
+ * happens to be transliterated still parses.
+ */
+const NUTRIENT_WORDS: Record<string, string[]> = {
+  protein: ['protein', 'proteine', 'proteines', 'proteinas', 'eiweiss', 'eiwit', 'πρωτε'],
+  carbs: [
+    'carbohydrate',
+    'carbohydrates',
+    'glucides',
+    'kohlenhydrate',
+    'carboidrati',
+    'hidratos de carbono',
+    'koolhydraten',
+    'υδατ',
+  ],
+  sugar: ['sugars', 'sugar', 'sucres', 'zucker', 'zuccheri', 'azucares', 'suikers', 'σακχαρ'],
+  fat: ['total fat', 'fat', 'lipides', 'matieres grasses', 'fett', 'grassi', 'grasas', 'vetten', 'λιπαρ'],
+  satFat: [
+    'saturates',
+    'saturated',
+    'satures',
+    'gesattigte',
+    'saturi',
+    'saturadas',
+    'verzadigde',
+    'κορεσμ',
+  ],
+  fiber: ['fibre', 'fiber', 'fibres', 'ballaststoffe', 'fibre alimentari', 'vezels', 'εδωδιμ', 'ινωδ'],
+};
+
+/** `fat` -> /(?:fat|lipides|...)[^\d\n]{0,24}?(number)\s*g/i */
+function nutrientPattern(key: keyof typeof NUTRIENT_WORDS): RegExp {
+  const words = NUTRIENT_WORDS[key]!.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  // `[^\d\n]` rather than `\D`: it must not cross a line, or a nutrient with no
+  // value of its own would capture the number from the row beneath it.
+  return new RegExp(`(?:${words})[^\\d\\n]{0,24}?(\\d+(?:[.,]\\d+)?)\\s*g`, 'i');
+}
+
 const LABEL_PATTERNS: { key: keyof ParsedLabel; pattern: RegExp; scale?: number }[] = [
-  { key: 'protein', pattern: /protein\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i },
-  { key: 'carbs', pattern: /carbohydrate\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i },
-  { key: 'sugar', pattern: /(?:of which )?sugars?\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i },
-  { key: 'fat', pattern: /(?:total )?fat\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i },
-  { key: 'satFat', pattern: /satur\w*\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i },
-  { key: 'fiber', pattern: /fib(?:re|er)\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i },
-  { key: 'sodiumMg', pattern: /sodium\D{0,20}?(\d+(?:[.,]\d+)?)\s*mg/i },
+  { key: 'protein', pattern: nutrientPattern('protein') },
+  { key: 'carbs', pattern: nutrientPattern('carbs') },
+  { key: 'sugar', pattern: nutrientPattern('sugar') },
+  { key: 'fat', pattern: nutrientPattern('fat') },
+  { key: 'satFat', pattern: nutrientPattern('satFat') },
+  { key: 'fiber', pattern: nutrientPattern('fiber') },
+  { key: 'sodiumMg', pattern: /(?:sodium|natrium|sodio)[^\d\n]{0,24}?(\d+(?:[.,]\d+)?)\s*mg/i },
   // `[^\n]` rather than `\D`: US panels write "Serving size 2/3 cup (55g)", and
   // a non-digit class cannot step over the "2/3" to reach the grams.
   { key: 'servingG', pattern: /serving size[^\n]{0,40}?(\d+(?:[.,]\d+)?)\s*g\b/i },
@@ -460,7 +508,15 @@ function readEnergyKcal(text: string): number | undefined {
  * to fill, because a wrong number entered silently is worse than a blank field.
  */
 export function parseNutritionLabel(lines: string[]): ParsedLabel {
-  const text = lines.join('\n');
+  // Diacritics are stripped before matching so one spelling covers every
+  // accented form: "gesättigte" and "gesattigte", "matières" and "matieres",
+  // "saturés" and "satures". Listing each variant by hand meant a German label
+  // read its fat but not its saturated fat. Only positions of digits are used
+  // afterwards, and normalising does not disturb those.
+  const text = lines
+    .join('\n')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
   const out: ParsedLabel = {};
 
   for (const { key, pattern, scale = 1 } of LABEL_PATTERNS) {
