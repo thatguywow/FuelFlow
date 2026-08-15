@@ -213,7 +213,11 @@ function unpack(
     const value = values[i];
     if (value === null || value === undefined) continue;
     const id = columns[i];
-    if (id !== undefined) per100g[id] = value;
+    // Clamped for the same reason the builder clamps: USDA's carbohydrate is
+    // derived by difference and rounds slightly negative on low-carb foods.
+    // Doing it here as well means the datasets already built are corrected on
+    // the device rather than waiting for the pipeline to rerun.
+    if (id !== undefined) per100g[id] = value < 0 ? 0 : value;
   }
 
   const portions: Portion[] = portionPairs

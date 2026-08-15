@@ -105,9 +105,18 @@ const MODE = argv.mode ?? (argv.usda || argv.input ? 'bulk' : 'api');
 const OUT_DIR = path.resolve('public/data');
 const OUT_FILE = path.join(OUT_DIR, 'core-foods.json');
 
-/** Three significant figures is well past the precision of the source data. */
+/**
+ * Three significant figures is well past the precision of the source data.
+ *
+ * Negatives are clamped to zero. USDA derives carbohydrate by difference —
+ * 100 minus water, protein, fat and ash — so a very low-carb food can round to
+ * a small negative: the shipping dataset carries ten of them, chicken breast
+ * at -0.428 g among others. Harmless in magnitude, nonsense on screen, and
+ * they quietly subtract from a day's carbohydrate total.
+ */
 function round(value) {
   if (!Number.isFinite(value) || value === 0) return 0;
+  if (value < 0) return 0;
   const magnitude = Math.floor(Math.log10(Math.abs(value)));
   const factor = Math.pow(10, 2 - magnitude);
   return Math.round(value * factor) / factor;

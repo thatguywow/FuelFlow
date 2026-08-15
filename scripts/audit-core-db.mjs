@@ -77,6 +77,7 @@ function auditInvariants(dataset) {
   };
 
   const seenIds = new Set();
+  const smallNegatives = [];
   let withEnergy = 0;
   let implausibleEnergy = 0;
 
@@ -100,6 +101,15 @@ function auditInvariants(dataset) {
     for (const [id, [low, high]] of Object.entries(PLAUSIBLE)) {
       const value = at(values, Number(id));
       if (value === undefined) continue;
+      // A small negative is a known upstream artefact rather than a broken
+      // import: USDA derives carbohydrate by difference, so a low-carb meat can
+      // round just below zero. Counted and reported, because the builder now
+      // clamps them and the count should be falling; a large negative is still
+      // a hard failure, since nothing legitimate produces one.
+      if (value < 0 && value > -1) {
+        smallNegatives.push(`${where}: nutrient ${id} = ${value}`);
+        continue;
+      }
       check(value >= low && value <= high, `${where}: nutrient ${id} = ${value}, outside ${low}..${high}`);
     }
 
@@ -139,6 +149,13 @@ function auditInvariants(dataset) {
 
   console.log(`  ${dataset.foods.length.toLocaleString()} foods, ${dataset.columns.length} nutrient columns`);
   console.log(`  ${implausibleEnergy} with energy outside Atwater tolerance (${(rate * 100).toFixed(2)}%)`);
+  if (smallNegatives.length > 0) {
+    console.log(`  ${smallNegatives.length} small negative values, clamped to zero when seeded:`);
+    for (const note of smallNegatives.slice(0, 10)) console.log(`    ${note}`);
+  }
+  // Clamping happens in the builder now, so a dataset built after this change
+  // has none at all. Well clear of the ten in the current export.
+  check(smallNegatives.length < 60, `${smallNegatives.length} negative nutrient values`);
 }
 
 // ---------------------------------------------------------------------------
