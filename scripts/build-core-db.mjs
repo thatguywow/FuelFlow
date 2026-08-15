@@ -328,9 +328,20 @@ async function buildFromBulk() {
     console.warn('  measure_unit.csv missing — portion labels will be less descriptive.');
   }
 
+  /**
+   * A portion whose whole name is a unit of measure.
+   *
+   * USDA lists one of these first on about 40% of foods — "oz", "fl oz" — and
+   * they are not servings, they are the same weight expressed differently.
+   * Taking the file order as given meant a beer defaulting to one fluid ounce
+   * with "can or bottle (12 fl oz)" sitting behind it, and chicken tenders to
+   * an ounce ahead of "piece". Kept in the list, ranked last.
+   */
+  const isBareUnit = (label) => /^[\d.,]*\s*(oz|fl\.?\s*oz|lb|g|ml|kg|l|cup|tbsp|tsp)$/i.test(label.trim());
+
   for await (const row of readCsv(await findCsv(input, 'food_portion.csv'))) {
     const food = foods.get(row.fdc_id);
-    if (!food || food.portions.length >= 6) continue;
+    if (!food) continue;
     const grams = Number(row.gram_weight);
     if (!Number.isFinite(grams) || grams <= 0) continue;
     const amount = Number(row.amount) || 1;
@@ -340,7 +351,23 @@ async function buildFromBulk() {
       unit && unit !== 'undetermined'
         ? `${amount} ${unit}${description ? ` (${description})` : ''}`
         : description || `${amount} serving`;
-    food.portions.push({ label: label.trim().slice(0, 60), grams });
+    // `seq_num` is USDA's own display order. It was being ignored, so the cap
+    // below could also throw away the good measures and keep the dull ones.
+    food.portions.push({
+      label: label.trim().slice(0, 60),
+      grams,
+      seq: Number(row.seq_num) || Number.MAX_SAFE_INTEGER,
+    });
+  }
+
+  // Named household measures first, then USDA's order within each group, and
+  // only then trim. The first entry becomes the app's default portion.
+  for (const food of foods.values()) {
+    food.portions.sort((a, b) => {
+      const bare = Number(isBareUnit(a.label)) - Number(isBareUnit(b.label));
+      return bare !== 0 ? bare : a.seq - b.seq;
+    });
+    food.portions = food.portions.slice(0, 6).map(({ label, grams }) => ({ label, grams }));
   }
 
   const usable = [...foods.values()].filter((f) => f.nutrients[208] !== undefined);

@@ -1,5 +1,6 @@
 import { db, tokenize, type Food, type Portion } from './schema';
 import type { Nutrients } from '../core/nutrients';
+import { isImperialUnitPortion, portionStatesItsMass } from '../core/foodName';
 
 /**
  * First-run seeding of the bundled core food dataset.
@@ -213,10 +214,32 @@ function unpack(
   const portions: Portion[] = portionPairs
     .filter(([, grams]) => grams > 0)
     .map(([label, grams]) => ({ label, grams }));
-  // Generic foods are most often weighed, so 100 g stays the default unless the
-  // source supplied a genuine household measure.
-  portions.push({ label: '100 g', grams: 100, preferred: portions.length === 0 });
-  if (portions.length > 1 && portions[0]) portions[0].preferred = true;
+  portions.push({ label: '100 g', grams: 100 });
+
+  /*
+   * Which portion opens by default.
+   *
+   * This used to be simply the first one USDA listed, and USDA lists a bare
+   * unit conversion first on 3,080 of the 7,793 bundled foods — a beer opened
+   * on "1 fl oz" with "can or bottle (12 fl oz)" sitting right behind it, and
+   * chicken tenders on "oz" ahead of "piece".
+   *
+   * A bare unit is not a serving, it is the same weight said differently, so
+   * it is the last thing that should be offered as a default. A named
+   * household measure wins; failing that, 100 g, which is what a generic food
+   * is usually weighed in anyway.
+   */
+  const household = portions.find(
+    (portion) => !isImperialUnitPortion(portion.label) && !portionStatesItsMass(portion.label),
+  );
+  // The 100 g fallback has to exclude bare units too. A handful of USDA rows
+  // carry a single portion labelled "oz" whose gram weight is 100, and matching
+  // on weight alone picked that one over the canonical entry appended above.
+  const hundred = portions.find(
+    (portion) => portion.grams === 100 && !isImperialUnitPortion(portion.label),
+  );
+  const preferred = household ?? hundred ?? portions[0];
+  if (preferred) preferred.preferred = true;
 
   const sourceId = String(fdcId);
   return {
