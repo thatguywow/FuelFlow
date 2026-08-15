@@ -17,8 +17,13 @@ const COUNT_KEY = 'coreData.count';
 /** Set once an install has been through the duplicate-collapsing pass. */
 const DEDUPED_KEY = 'coreData.deduped';
 
-/** `[name, category, values[], portions[][], fdcId]` */
-type PackedFood = [string, string, (number | null)[], [string, number][], number];
+/**
+ * `[name, category, values[], portions[][], fdcId, origin?]`
+ *
+ * `origin` was added later, so it is optional: a dataset built before it
+ * existed simply leaves provenance unset rather than failing to load.
+ */
+type PackedFood = [string, string, (number | null)[], [string, number][], number, string?];
 
 interface CoreDataset {
   version: string;
@@ -200,7 +205,7 @@ function unpack(
   idByFdc: Map<string, string>,
   now: number,
 ): Food | null {
-  const [name, category, values, portionPairs, fdcId] = packed;
+  const [name, category, values, portionPairs, fdcId, origin] = packed;
   if (!name) return null;
 
   const per100g: Nutrients = {};
@@ -256,6 +261,7 @@ function unpack(
     tokens: tokenize(name, category),
     quality: 0.95,
     verified: true,
+    origin: origin === 'analysis' || origin === 'label' || origin === 'calculated' ? origin : undefined,
     createdAt: now,
     updatedAt: now,
   };

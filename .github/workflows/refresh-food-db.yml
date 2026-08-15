@@ -43,6 +43,12 @@ jobs:
       - name: Build core food dataset
         run: node scripts/build-core-db.mjs --usda=data-build/usda
 
+      # The dataset is checked against the raw export it was built from before
+      # anything is published. A unit factor on the wrong nutrient would pass
+      # every other test in the repo and quietly make every calorie wrong.
+      - name: Audit the core dataset
+        run: node scripts/audit-core-db.mjs --source=data-build/usda --samples=300
+
       - name: Build hosted food database
         run: |
           ARGS="--usda=data-build/usda"

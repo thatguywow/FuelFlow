@@ -45,7 +45,7 @@ const SEARCH_BASE = 'https://search.openfoodfacts.org';
  *
  * Opening one product is where the full record is worth fetching, once.
  */
-const SEARCH_FIELDS = [
+const SEARCH_FIELD_LIST = [
   'code',
   'product_name',
   'product_name_en',
@@ -60,9 +60,9 @@ const SEARCH_FIELDS = [
   // `completeness`, which only says how filled-in the record is.
   'popularity_key',
   'countries_tags',
-].join(',');
+];
 
-const PRODUCT_FIELDS = [
+const PRODUCT_FIELD_LIST = [
   'code',
   'product_name',
   'product_name_en',
@@ -78,7 +78,7 @@ const PRODUCT_FIELDS = [
   'completeness',
   'image_front_small_url',
   'countries_tags',
-].join(',');
+];
 
 /**
  * Candidates pulled before ranking, against rows actually shown.
@@ -90,6 +90,20 @@ const PRODUCT_FIELDS = [
  * response than fifteen used to be.
  */
 const CANDIDATE_POOL = 100;
+
+/**
+ * The field list, with the reader's own language name field added.
+ *
+ * Open Food Facts keeps one `product_name_<lang>` column per language. Asking
+ * only for English is why a Greek product never came back with a Greek name.
+ */
+function fieldsFor(list: string[]): string {
+  const language = deviceLanguage();
+  const localized = `product_name_${language}`;
+  return (language === 'en' || list.includes(localized) ? list : [...list, localized]).join(',');
+}
+
+
 
 // ---------------------------------------------------------------------------
 // Rate limiting
@@ -308,13 +322,33 @@ function buildPortions(product: OffProduct): Portion[] {
   return portions;
 }
 
+/**
+ * The product's name in the reader's own language, where it has one.
+ *
+ * Open Food Facts stores a separate `product_name_<lang>` per language and we
+ * were only ever asking for English — so a Greek product with a perfectly good
+ * Greek name came back under whatever the generic `product_name` field held,
+ * or under a transliteration nobody would recognise. The device language is
+ * requested alongside English and preferred when present, which is the same
+ * thing OpenNutriTracker does with its per-locale name fields.
+ *
+ * English remains the fallback: most of the catalogue has nothing else.
+ */
 function bestName(product: OffProduct): string {
+  const localized = product[`product_name_${deviceLanguage()}` as keyof OffProduct];
   return (
+    (typeof localized === 'string' ? localized.trim() : '') ||
     product.product_name_en?.trim() ||
     product.product_name?.trim() ||
     product.generic_name?.trim() ||
     (product.code ? `Product ${product.code}` : 'Unknown product')
   );
+}
+
+/** Two-letter device language, e.g. "el" for a Greek phone. */
+function deviceLanguage(): string {
+  const locale = typeof navigator !== 'undefined' ? navigator.language : 'en';
+  return (locale ?? 'en').split('-')[0]!.toLowerCase();
 }
 
 /**
@@ -346,7 +380,7 @@ async function toFood(product: OffProduct, detailed = false): Promise<Food | nul
 
 export async function fetchByBarcode(barcode: string): Promise<Food | null> {
   await productBucket.take();
-  const url = `${BASE}/api/v2/product/${encodeURIComponent(barcode)}.json?fields=${PRODUCT_FIELDS}${identity()}`;
+  const url = `${BASE}/api/v2/product/${encodeURIComponent(barcode)}.json?fields=${fieldsFor(PRODUCT_FIELD_LIST)}${identity()}`;
   const data = await request<{ status?: number; product?: OffProduct }>(url);
   if (!data.product || data.status === 0) return null;
   return toFood(data.product, true);
@@ -547,7 +581,7 @@ export async function searchOnline(query: string, options: OffSearchOptions = {}
     q: trimmed,
     // A wide pool to rank from, not the handful actually shown.
     page_size: String(CANDIDATE_POOL),
-    fields: SEARCH_FIELDS,
+    fields: fieldsFor(SEARCH_FIELD_LIST),
     langs: searchLanguages(),
   });
   if (options.country) params.set('countries_tags_en', options.country);
@@ -632,7 +666,7 @@ async function fetchCandidates(
     search_simple: '1',
     action: 'process',
     page_size: String(CANDIDATE_POOL),
-    fields: SEARCH_FIELDS,
+    fields: fieldsFor(SEARCH_FIELD_LIST),
     json: '1',
   });
   const data = await request<{ products?: OffProduct[] }>(

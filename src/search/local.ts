@@ -1,6 +1,7 @@
 import { db, normalizeQuery, type Food, type FoodSource } from '../db/schema';
 import { frecencyScore } from '../db/repo';
 import { isImperialUnitPortion } from '../core/foodName';
+import { expandToken } from '../core/aliases';
 import { N } from '../core/nutrients';
 
 /**
@@ -124,9 +125,27 @@ export async function searchLocal(query: string, options: LocalSearchOptions = {
   // cooke" happened to pick "white" (~240 matches) and worked. Longer does not
   // mean rarer. The smallest key set is the selective one by definition, and
   // it is the only one guaranteed not to have been truncated.
+  /*
+   * Each token becomes a group of interchangeable words.
+   *
+   * "aubergine" also searches "eggplant", "soda" also searches "cola" and
+   * "carbonated". The group is satisfied when any of its members matches, so a
+   * multi-word query still requires every *concept* to be present — widening
+   * recall without loosening the AND.
+   *
+   * Almost every word expands to just itself, so the common case costs one
+   * extra array of length one.
+   */
+  const groups = tokens.map(expandToken);
+
   const cap = options.candidateCap ?? 4000;
   const keySets = await Promise.all(
-    tokens.map((token) => db.foods.where('tokens').startsWith(token).limit(cap).primaryKeys()),
+    groups.map(async (group) => {
+      const perWord = await Promise.all(
+        group.map((word) => db.foods.where('tokens').startsWith(word).limit(cap).primaryKeys()),
+      );
+      return [...new Set(perWord.flat() as string[])];
+    }),
   );
 
   let driverIndex = 0;
@@ -135,7 +154,7 @@ export async function searchLocal(query: string, options: LocalSearchOptions = {
   }
 
   const unique = [...new Set(keySets[driverIndex] as string[])];
-  const rest = tokens.filter((_, i) => i !== driverIndex);
+  const rest = groups.filter((_, i) => i !== driverIndex);
   if (unique.length === 0) return [];
 
   const candidates = (await db.foods.bulkGet(unique)).filter(
@@ -150,10 +169,10 @@ export async function searchLocal(query: string, options: LocalSearchOptions = {
   const hits: SearchHit[] = [];
 
   for (const food of candidates) {
-    // Every remaining query token must prefix-match one of the food's tokens.
+    // Every remaining group must be satisfied by at least one of its words.
     let matchedAll = true;
-    for (const token of rest) {
-      if (!food.tokens.some((t) => t.startsWith(token))) {
+    for (const group of rest) {
+      if (!group.some((word) => food.tokens.some((t) => t.startsWith(word)))) {
         matchedAll = false;
         break;
       }
@@ -222,6 +241,11 @@ function scoreFood(
   score *= SOURCE_WEIGHT[food.source] ?? 1;
   score += (food.quality ?? 0.5) * 6;
   if (food.verified) score += 4;
+  // A figure a laboratory measured is worth more than one calculated from a
+  // recipe. Small on purpose: it breaks ties between comparable records rather
+  // than reordering the results.
+  if (food.origin === 'analysis') score += 3;
+  else if (food.origin === 'calculated') score -= 1;
 
   if (usage) {
     score += frecencyScore(usage, at) * 18;

@@ -389,10 +389,21 @@ export default function FoodDetail({
   );
 }
 
+/** How the food's energy figure was arrived at, when the source recorded it. */
+const ORIGIN_LABEL: Record<NonNullable<Food['origin']>, string> = {
+  analysis: 'measured in a laboratory',
+  label: 'taken from the packet',
+  calculated: 'calculated from a recipe',
+};
+
 function sourceLabel(food: Food): string {
+  const origin = food.origin ? ` · ${ORIGIN_LABEL[food.origin]}` : '';
   switch (food.source) {
     case 'usda':
-      return 'USDA FoodData Central · analytically measured, public domain';
+      // The blanket "analytically measured" was not true of every record —
+      // FNDDS survey foods are computed from recipes — so the claim now comes
+      // from what USDA actually recorded for this food.
+      return `USDA FoodData Central · public domain${origin}`;
     case 'off':
       return 'Open Food Facts · crowd-sourced, check the label if something looks wrong';
     case 'branded':

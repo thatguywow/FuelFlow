@@ -59,6 +59,17 @@ export interface Food {
   verified?: boolean;
 
   /**
+   * How the food's energy figure was arrived at.
+   *
+   * `analysis` means a laboratory measured it, `label` that it was copied off
+   * a packet, `calculated` that it was derived from a recipe or from other
+   * nutrients. USDA records this and we were throwing it away — it is both a
+   * better ranking signal than data completeness and something worth telling
+   * the user, since the three are not equally trustworthy.
+   */
+  origin?: 'analysis' | 'label' | 'calculated';
+
+  /**
    * True when this record came from a full product lookup rather than from a
    * search result page.
    *

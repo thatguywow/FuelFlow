@@ -61,6 +61,11 @@ jobs:
           node scripts/fetch-usda.mjs --out=data-build/usda
           node scripts/build-core-db.mjs --usda=data-build/usda
 
+      # Whatever the dataset came from — the cache or the fallback build above —
+      # its invariants are checked before it goes into an APK.
+      - name: Audit the core dataset
+        run: node scripts/audit-core-db.mjs
+
       # The hosted database is far too large to ship inside an APK, so the
       # native app reads it from the Pages deployment over range requests —
       # exactly as the web build does. Everything else works offline.

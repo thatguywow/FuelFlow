@@ -66,6 +66,19 @@ const ALIASES = new Map([
   [417, { id: 435, rank: 1 }],
 ]);
 
+/**
+ * USDA's derivation codes, collapsed to the vocabulary the OpenNutriTracker
+ * backend uses. The first letter carries the meaning: A = analytical, M and L
+ * = taken from a label, everything else is calculated or imputed.
+ */
+function originFromDerivation(code) {
+  if (!code) return undefined;
+  const initial = code.trim().charAt(0).toUpperCase();
+  if (initial === 'A') return 'analysis';
+  if (initial === 'M' || initial === 'L') return 'label';
+  return 'calculated';
+}
+
 /** Resolve one upstream nutrient reading into the canonical vector. */
 function assign(nutrients, ranks, rawNumber, amount) {
   const alias = ALIASES.get(rawNumber);
@@ -135,6 +148,11 @@ function assemble(foods, meta) {
       }),
       food.portions.map((p) => [p.label, round(p.grams)]),
       food.fdcId,
+      // How the energy figure was arrived at. USDA records this per value and
+      // we were discarding it: a number measured in a laboratory deserves more
+      // trust than one calculated from a recipe, and saying which is which is
+      // more honest than presenting both as equally solid.
+      food.origin ?? '',
     ]),
   };
 }
@@ -304,6 +322,18 @@ async function buildFromBulk() {
   }
   console.log(`  ${numberByInternalId.size} nutrient definitions`);
 
+  // How each value was arrived at. USDA keys this per nutrient row; we keep it
+  // for the energy figure, which is the number the whole app is built on.
+  const derivationCode = new Map();
+  try {
+    for await (const row of readCsv(await findCsv(input, 'food_nutrient_derivation.csv'))) {
+      if (row.id && row.code) derivationCode.set(row.id, row.code);
+    }
+    console.log(`  ${derivationCode.size} derivation codes`);
+  } catch {
+    console.warn('  food_nutrient_derivation.csv missing — provenance will be unset.');
+  }
+
   // Pass 2: nutrient values. This is the large file — stream it.
   console.log('Reading food_nutrient.csv (this is the big one)…');
   let rows = 0;
@@ -314,7 +344,13 @@ async function buildFromBulk() {
     const raw = numberByInternalId.get(row.nutrient_id) ?? Number(row.nutrient_id);
     const amount = Number(row.amount);
     if (!Number.isFinite(raw) || !Number.isFinite(amount)) continue;
+    const before = food.ranks[208];
     assign(food.nutrients, food.ranks, raw, amount);
+    // Only when this row actually became the food's energy value, so a
+    // rejected lower-priority reading cannot relabel a better one.
+    if (food.ranks[208] !== before) {
+      food.origin = originFromDerivation(derivationCode.get(row.derivation_id));
+    }
   }
 
   // Pass 3: household portions.
