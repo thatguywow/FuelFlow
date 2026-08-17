@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FuelFlow · Privacy Policy</title>
+    <meta
+      name="description"
+      content="FuelFlow collects nothing. No account, no server, no analytics. Everything you log stays on your device."
+    />
+    <!--
+      A standalone page rather than a route in the app.
+
+      Google Play requires a privacy policy at a URL reachable without
+      installing anything, and a single-page app behind a service worker is a
+      poor way to serve one. This is plain HTML on the same Pages deployment,
+      so it works with JavaScript disabled and outlives any change to the app's
+      routing.
+    -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --text: #10131a;
+        --dim: #47506a;
+        --faint: #6b7590;
+        --border: #e2e6f0;
+        --brand: #1f6feb;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #080a0f;
+          --surface: #12151d;
+          --text: #eef1f7;
+          --dim: #b3bccf;
+          --faint: #7f8aa3;
+          --border: #232838;
+          --brand: #58a6ff;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 3rem 1.25rem 5rem;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.65 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { max-width: 46rem; margin: 0 auto; }
+      h1 { font-size: 1.9rem; letter-spacing: -0.02em; margin: 0 0 0.35rem; }
+      h2 { font-size: 1.15rem; letter-spacing: -0.01em; margin: 2.4rem 0 0.6rem; }
+      .meta { color: var(--faint); font-size: 0.9rem; margin: 0 0 2rem; }
+      p, li { color: var(--dim); }
+      li { margin-bottom: 0.35rem; }
+      strong { color: var(--text); }
+      a { color: var(--brand); }
+      .lede {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.1rem 1.25rem;
+        margin: 0 0 1rem;
+      }
+      .lede p:last-child { margin-bottom: 0; }
+      footer {
+        margin-top: 3rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--border);
+        color: var(--faint);
+        font-size: 0.875rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Privacy Policy</h1>
+      <p class="meta">FuelFlow · last updated 17 August 2026</p>
+
+      <div class="lede">
+        <p>
+          <strong>FuelFlow does not collect anything.</strong> There is no account, no server of
+          ours, and no analytics. Everything you log stays in the app's own storage on your device.
+        </p>
+        <p>
+          That is not a promise about how carefully we handle your data — it is a statement that we
+          never receive it.
+        </p>
+      </div>
+
+      <h2>What is stored, and where</h2>
+      <p>
+        Everything below is written to the app's private storage on your device and nowhere else:
+      </p>
+      <ul>
+        <li>your diary entries, meals and recipes</li>
+        <li>your profile: height, weight, age, reference sex, activity level, goals</li>
+        <li>weigh-ins and body measurements</li>
+        <li>water and exercise entries</li>
+        <li>foods you create, and a cache of foods looked up from public databases</li>
+        <li>your settings</li>
+      </ul>
+      <p>
+        Uninstalling the app deletes all of it. We cannot recover it, because we never had it.
+      </p>
+
+      <h2>What leaves your device</h2>
+      <p>Three things, and only when you use the feature that needs them.</p>
+      <p>
+        <strong>Food database downloads.</strong> On first launch the app downloads a bundled dataset
+        of generic foods, and it reads a hosted database of packaged products over the network as you
+        search. These are ordinary file downloads. They tell the server which food data was
+        requested, and nothing about you.
+      </p>
+      <p>
+        <strong>Open Food Facts lookups.</strong> When you search for a packaged product or scan a
+        barcode that is not already on your device, the app queries
+        <a href="https://world.openfoodfacts.org">Open Food Facts</a>, a public non-profit food
+        database. The request contains the search text or the barcode, plus an identifier for the app
+        itself. It contains no identifier for you. Open Food Facts' own privacy policy applies to
+        that request.
+      </p>
+      <p>
+        <strong>Backups you export.</strong> If you export a backup or a CSV, the file goes wherever
+        you send it. That is under your control, and the app offers to encrypt the backup with a
+        passphrase before it is written.
+      </p>
+      <p>
+        Nothing else is transmitted. There is no telemetry, no crash reporting, no advertising
+        identifier, and no third-party SDK that collects data.
+      </p>
+
+      <h2>Permissions</h2>
+      <p>
+        <strong>Camera</strong> — used only while a scanner screen is open, to read a barcode or a
+        nutrition label. Frames are processed on your device and are not stored or transmitted. The
+        app does not request photo library access.
+      </p>
+      <p>
+        The app requests no location, contacts, microphone or health-platform permissions.
+      </p>
+
+      <h2>Children</h2>
+      <p>
+        FuelFlow is not directed at children under 13 and collects no data from anyone, including
+        children.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        If this policy ever changes, the new version will be published here and the date above
+        updated. Because the app collects nothing, a change would mean the app started doing
+        something new — which would be described plainly.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        FuelFlow is free software, developed in the open at
+        <a href="https://github.com/thatguywow/FuelFlow">github.com/thatguywow/FuelFlow</a>.
+        Questions and concerns are best raised as an issue there.
+      </p>
+
+      <footer>
+        FuelFlow is licensed under the GNU General Public License v3.0.
+      </footer>
+    </main>
+  </body>
+</html>

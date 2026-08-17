@@ -9,6 +9,14 @@ on:
   schedule:
     - cron: '0 4 1 * *' # 04:00 UTC on the first of the month
   workflow_dispatch:
+    inputs:
+      scope:
+        description: 'What to rebuild'
+        type: choice
+        default: core-only
+        options:
+          - core-only
+          - everything
 
 permissions:
   contents: read
@@ -31,6 +39,18 @@ jobs:
         with:
           node-version: '24'
 
+      # A core-only rebuild still has to republish the hosted snapshot, so the
+      # previous one is restored and passed straight back through.
+      - name: Restore the previous food database
+        if: github.event_name == 'workflow_dispatch' && inputs.scope == 'core-only'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            public/fooddb
+            public/data/core-foods.json
+          key: fooddb-${{ vars.FOOD_DB_VERSION || 'v1' }}
+          restore-keys: fooddb-
+
       - name: Free runner disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
@@ -49,7 +69,14 @@ jobs:
       - name: Audit the core dataset
         run: node scripts/audit-core-db.mjs --source=data-build/usda --samples=300
 
+      # The bundled USDA set and the hosted Open Food Facts snapshot are
+      # independent, and only one of them is expensive. Rebuilding the core
+      # dataset — to pick up a change to the converter, say — took the full
+      # four-hour run because the two were welded together. `core-only` skips
+      # the gigabyte download and finishes in minutes; the monthly schedule
+      # still rebuilds everything.
       - name: Build hosted food database
+        if: github.event_name != 'workflow_dispatch' || inputs.scope == 'everything'
         run: |
           ARGS="--usda=data-build/usda"
           if [ -n "${{ vars.FOOD_DB_COUNTRIES }}" ]; then
@@ -61,10 +88,11 @@ jobs:
         run: |
           echo "### Food data rebuilt" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
-          cat public/fooddb/manifest.json >> $GITHUB_STEP_SUMMARY
+          cat public/fooddb/manifest.json 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo '(core dataset only)' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "Chunks: $(ls public/fooddb | grep -c 'sqlite3\.' || echo 0)" >> $GITHUB_STEP_SUMMARY
-          du -sh public/fooddb public/data/core-foods.json >> $GITHUB_STEP_SUMMARY
+          echo "Chunks: $(ls public/fooddb 2>/dev/null | grep -c 'sqlite3\.' || echo 0)" >> $GITHUB_STEP_SUMMARY
+          du -sh public/data/core-foods.json >> $GITHUB_STEP_SUMMARY
+          du -sh public/fooddb 2>/dev/null >> $GITHUB_STEP_SUMMARY || true
 
       # A fresh key means the deploy workflow's `restore-keys` prefix match
       # picks this up instead of last month's copy.
@@ -74,6 +102,8 @@ jobs:
           path: |
             public/fooddb
             public/data/core-foods.json
+          # A core-only run leaves `public/fooddb` as whatever the restore put
+          # there, so the snapshot is carried forward rather than lost.
           key: fooddb-${{ vars.FOOD_DB_VERSION || 'v1' }}-${{ github.run_id }}
 
       - name: Trigger a redeploy

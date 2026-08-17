@@ -174,3 +174,31 @@ Diary entries store a **snapshot** of a food's nutrition as it was when logged, 
 
 - [USDA FoodData Central](https://fdc.nal.usda.gov/) — public domain (17 U.S.C. § 105)
 - [Open Food Facts](https://world.openfoodfacts.org/) — Open Database License; product names and brands remain their owners' property
+
+## Licence
+
+FuelFlow is free software under the [GNU General Public License v3.0](LICENSE).
+
+You may use, study, share and modify it. If you distribute a modified version,
+it has to stay under the same licence and its source has to be available — which
+is the point: the app is free, and no one can take this work and ship a closed
+paid version of it.
+
+## Privacy
+
+FuelFlow collects nothing. There is no account, no server of ours, and no
+analytics. See [PRIVACY.md](PRIVACY.md), published at
+[/privacy.html](https://thatguywow.github.io/FuelFlow/privacy.html).
+
+## Running the checks
+
+The tests drive the real app in a real browser, because most of what has gone
+wrong in this project was invisible to a unit test.
+
+```bash
+npm run dev      # one terminal
+npm run check    # another; --only=relevance,portions for a subset
+```
+
+`node scripts/audit-core-db.mjs` validates the bundled food dataset separately,
+and runs in CI on every build.

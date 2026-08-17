@@ -1,0 +1,173 @@
+name: Build a signed Android release
+
+# Produces the signed App Bundle Google Play accepts.
+#
+# The debug APK from `android.yml` is for testing on your own phone and Play
+# will refuse it: it is signed with the throwaway debug key every Android SDK
+# ships, so it identifies nobody. A release needs *your* key, and that key is
+# the app's permanent identity — lose it and you can never update the listing
+# again, leak it and somebody else can publish as you.
+#
+# For that reason this workflow holds no key. It signs only when four repository
+# secrets exist, and does nothing at all when they do not, so the workflow is
+# safe to have in a public repo from the first commit.
+#
+# ---------------------------------------------------------------------------
+# Creating the key, once, on your own machine:
+#
+#   keytool -genkeypair -v -keystore fuelflow-release.jks \
+#     -keyalg RSA -keysize 4096 -validity 10000 -alias fuelflow
+#
+# Back that file up somewhere you will still have in ten years. Then add four
+# secrets under Settings > Secrets and variables > Actions:
+#
+#   ANDROID_KEYSTORE_BASE64   base64 -w0 fuelflow-release.jks
+#   ANDROID_KEYSTORE_PASSWORD the store password you chose
+#   ANDROID_KEY_ALIAS         fuelflow
+#   ANDROID_KEY_PASSWORD      the key password you chose
+#
+# Never commit the .jks file or those passwords.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Version name, e.g. 1.0.0'
+        required: true
+        type: string
+      version_code:
+        description: 'Version code — a whole number, higher than the last upload'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check the signing secrets are present
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "::error::No signing key configured. See the comment at the top of this workflow."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - run: npm ci
+
+      # Same dataset the debug build uses, so a release ships what was tested.
+      - name: Restore the food database
+        id: fooddb-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            public/fooddb
+            public/data/core-foods.json
+          key: fooddb-${{ vars.FOOD_DB_VERSION || 'v1' }}
+          restore-keys: fooddb-
+
+      - name: Build the core dataset if the cache was empty
+        if: steps.fooddb-cache.outputs.cache-matched-key == ''
+        run: |
+          node scripts/fetch-usda.mjs --out=data-build/usda
+          node scripts/build-core-db.mjs --usda=data-build/usda
+
+      - name: Audit the core dataset
+        run: node scripts/audit-core-db.mjs
+
+      - name: Build the web bundle
+        env:
+          VITE_FOOD_DB_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/fooddb/
+        run: |
+          rm -rf public/fooddb
+          npm run build
+
+      - name: Add the Android platform
+        run: |
+          npx cap add android
+          node scripts/patch-android-manifest.mjs
+          node scripts/patch-android-theme.mjs
+          node scripts/build-icons.mjs
+          node scripts/check-android-resources.mjs
+          npx cap sync android
+
+      # Play orders uploads by version code alone; the name is only what people
+      # read. Both are set here rather than committed so a release never
+      # depends on remembering to bump a file.
+      - name: Stamp the version
+        run: |
+          cd android/app
+          sed -i "s/versionCode .*/versionCode ${{ inputs.version_code }}/" build.gradle
+          sed -i "s/versionName .*/versionName \"${{ inputs.version_name }}\"/" build.gradle
+          grep -E 'versionCode|versionName' build.gradle
+
+      - name: Restore the keystore
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE" | base64 -d > android/app/release.jks
+
+      - name: Assemble the signed bundle
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew bundleRelease --no-daemon --stacktrace \
+            -Pandroid.injected.signing.store.file=$PWD/app/release.jks \
+            -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD"
+
+      # Before the artifact is uploaded, so a failure cannot leave it behind.
+      - name: Remove the keystore
+        if: always()
+        run: rm -f android/app/release.jks
+
+      - name: Collect the bundle
+        id: bundle
+        run: |
+          AAB=$(find android -name '*-release.aab' | head -1)
+          cp "$AAB" "fuelflow-${{ inputs.version_name }}.aab"
+          echo "size=$(du -h "$AAB" | cut -f1)" >> $GITHUB_OUTPUT
+
+      # Deliberately an artifact rather than a public release: this file is
+      # signed with your identity and belongs in Play, not on a download page.
+      - uses: actions/upload-artifact@v5
+        with:
+          name: fuelflow-release-bundle
+          path: fuelflow-${{ inputs.version_name }}.aab
+          retention-days: 90
+
+      - name: Summarise
+        run: |
+          {
+            echo "### Signed bundle ready"
+            echo ""
+            echo "- version **${{ inputs.version_name }}** (code ${{ inputs.version_code }})"
+            echo "- size ${{ steps.bundle.outputs.size }}"
+            echo ""
+            echo "Download it from this run's artifacts and upload to Play Console."
+          } >> $GITHUB_STEP_SUMMARY
