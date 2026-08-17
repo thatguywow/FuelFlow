@@ -1,6 +1,7 @@
 import { db, normalizeQuery, type Food, type FoodSource } from '../db/schema';
 import { frecencyScore } from '../db/repo';
 import { isImperialUnitPortion } from '../core/foodName';
+import { foodGrade, headMatch, isAnimalProduct } from '../core/grading';
 import { expandToken } from '../core/aliases';
 import { N } from '../core/nutrients';
 
@@ -45,10 +46,16 @@ export interface LocalSearchOptions {
  */
 const NARROWING_TERMS = [
   // Components of a food rather than the food.
+  //
+  // Phrases, not bare words, and matched on word boundaries. "skin" used to
+  // match "skinless" and "bone" used to match "boneless", so the canonical
+  // "Chicken, breast, skinless, boneless, meat only, raw" was docked eighteen
+  // points for being precisely the cut people search for. "white" did the same
+  // to white rice and white bread.
   'yolk',
-  'white',
-  'skin',
-  'bone',
+  'egg white',
+  'and skin',
+  'skin only',
   'shell',
   'peel',
   'leaves',
@@ -91,6 +98,35 @@ const NARROWING_TERMS = [
   'sauce',
   'soup',
   'candies',
+  // Meat analogues file under the meat's own name — "Chicken, meatless" was
+  // the top hit for "chicken", ahead of every actual bird.
+  'meatless',
+  'substitute',
+  'imitation',
+  // Offal and trim. USDA files these under the animal, so "chicken" returned
+  // heart, liver and giblets before any cut anybody eats as chicken.
+  'giblets',
+  'liver',
+  'heart',
+  'gizzard',
+  'neck',
+  'tail',
+  'feet',
+  'brain',
+  'kidney',
+  'tongue',
+  'tripe',
+  // Species and forms that are the marked case. Nobody typing "milk" means
+  // sheep milk or evaporated milk, but USDA files them under the same head
+  // word as the cow's milk everybody does mean.
+  'sheep',
+  'goat',
+  'buffalo',
+  'camel',
+  'reindeer',
+  'evaporated',
+  'condensed',
+  'dry',
 ] as const;
 
 /** Source trust ordering: your own data first, then curated, then crowd-sourced. */
@@ -193,6 +229,37 @@ export async function searchLocal(query: string, options: LocalSearchOptions = {
   return top;
 }
 
+/**
+ * Anatomical parts, recognised as a whole clause of the name.
+ *
+ * "Egg, white, raw" is the white; "Rice, white, long-grain" is white rice. Only
+ * applied to animal products, where the part reading is the right one.
+ */
+const PART_CLAUSES = new Set([
+  'white', 'whites', 'yolk', 'yolks', 'skin', 'fat', 'separable fat',
+  'giblets', 'bone', 'bones', 'shell', 'rind',
+]);
+
+/** True when a clause of the name names a part rather than a preparation. */
+function namesAPart(food: Food, tokens: string[]): boolean {
+  if (!isAnimalProduct(food.category)) return false;
+  return food.name
+    .toLowerCase()
+    .split(',')
+    .slice(1)
+    .map((clause) => clause.trim().replace(/\s*\(.*$/, ''))
+    .some((clause) => PART_CLAUSES.has(clause) && !tokens.some((token) => clause.startsWith(token)));
+}
+
+/** True when `term` appears in `name` as a whole word (or whole phrase). */
+function containsWord(name: string, term: string): boolean {
+  const index = name.indexOf(term);
+  if (index < 0) return false;
+  const before = index === 0 ? ' ' : name[index - 1]!;
+  const after = name[index + term.length] ?? ' ';
+  return !/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after);
+}
+
 function scoreFood(
   food: Food,
   tokens: string[],
@@ -205,34 +272,56 @@ function scoreFood(
   for (const token of tokens) {
     const exact = food.tokens.includes(token);
     score += exact ? 10 : 5;
-    // A query that matches the beginning of the name is almost always what the
-    // user meant: "chicken" should surface "Chicken, breast" over
-    // "Soup, cream of chicken".
-    if (name.startsWith(token)) score += 8;
-    else if (name.includes(token)) score += 3;
+    if (name.includes(token)) score += 3;
   }
 
-  // Prefer concise names. Long USDA descriptions are usually oddly specific
-  // variants ("Chicken, broiler, meat and skin, cooked, stewed").
-  score += Math.max(0, 8 - name.length / 12);
+  /*
+   * Does the query name the food, or something the food is in?
+   *
+   * This is the signal that was missing, and it is the one that matters most.
+   * USDA leads every description with the food and appends qualifiers, so the
+   * clause before the first comma is its identity: "Apples" in "Apples, raw",
+   * but "Strudel" in "Strudel, apple". Searching "apple" used to return the
+   * strudel, the croissant and three Applebee's dishes before the fruit,
+   * because all of them contain the word somewhere and the strudel's name is
+   * shorter.
+   *
+   * Scaled rather than boolean, so "Potatoes" beats "Potato flour" for the
+   * query "potato" — both begin with it, but only one is *only* it.
+   */
+  score += headMatch(food.name, tokens) * 26;
 
-  // USDA descriptions are "food, qualifier, qualifier, …". Each extra clause
-  // narrows the record, so a plain search should favour the plainer entry.
+  /*
+   * How basic the food is, independent of the query.
+   *
+   * A raw apple and an apple strudel are not equally likely answers to
+   * "apple", and USDA's own category already says which is which. Applied as a
+   * multiplier so it scales the whole match rather than adding a constant a
+   * strong text match could swamp.
+   */
+  score *= 0.55 + 0.45 * (food.grade ?? foodGrade(food.category));
+
+  // The old concision bonus lived here and had to go: it rewarded short names,
+  // and USDA's canonical entries are the long ones. "Rice crackers" beat
+  // "Rice, white, long-grain, regular, raw" on brevity alone.
   //
-  // Kept deliberately light. The canonical generic entries are the verbose
-  // ones — "Chicken, broilers or fryers, breast, meat only, raw" — so a heavy
-  // per-clause penalty demotes exactly the records a bare query wants, and
-  // hands the top spot to short deli-product names instead.
-  score -= Math.max(0, name.split(',').length - 2) * 0.8;
+  // A much lighter version survives as a tiebreak: among foods the query names
+  // equally well, the one carrying fewer qualifiers is the plainer variant.
+  // Small enough that it cannot outweigh the head match or the grade.
+  score -= Math.max(0, food.name.split(',').length - 3) * 0.7;
 
   // Searching "egg" should not surface dried egg yolk powder, and "chicken
   // breast" should not surface a sliced oven-roasted roll. Penalise component
-  // and prepared-product qualifiers the query did not actually ask for. This
-  // has to outweigh the concision bonus a short product name earns, or the
-  // product still wins.
+  // and prepared-product qualifiers the query did not actually ask for.
   for (const term of NARROWING_TERMS) {
-    if (name.includes(term) && !tokens.some((token) => term.startsWith(token))) score -= 9;
+    // Word boundaries: a term must be a word of the name, not a fragment of a
+    // longer one. Substring matching is what made "boneless" read as "bone".
+    if (!containsWord(name, term)) continue;
+    if (tokens.some((token) => term.startsWith(token))) continue;
+    score -= 9;
   }
+
+  if (namesAPart(food, tokens)) score -= 12;
 
   // Records without usable energy data are noise.
   const energy = food.per100g[N.ENERGY];

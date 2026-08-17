@@ -22,6 +22,12 @@ import { Button, Card, EmptyState, Field, Input, Sheet, Toggle, cx } from '../ui
 import { MealPicker } from './Sheets';
 import { IconLabel, IconCheck, IconClose, IconFlash } from '../ui/icons';
 
+/**
+ * The aiming rectangle, as fractions of the frame — kept beside the class names
+ * that draw it so the two cannot drift apart.
+ */
+const LABEL_GUIDE = { x: 0.08, y: 0.15, width: 0.84, height: 0.58 };
+
 type Basis = '100g' | 'serving';
 
 /** Fixed key set so indexing stays type-safe under noUncheckedIndexedAccess. */
@@ -124,7 +130,11 @@ export default function LabelScanner({ mealId, day }: { mealId: string; day: Day
   const shutter = async () => {
     const video = videoRef.current;
     if (!video) return;
-    const frame = captureFrame(video);
+    // Only the rectangle the user aimed with, and at full sensor resolution.
+    // The guide is 84% wide and 58% tall, centred at 44% down — reading just
+    // that keeps every pixel of the panel instead of spending the byte budget
+    // on the table, the wall and the rest of the packet.
+    const frame = captureFrame(video, { crop: LABEL_GUIDE });
     if (!frame) return;
     stopCamera();
     await readFrame(frame);

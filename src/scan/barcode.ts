@@ -135,6 +135,9 @@ export function scanSource(): ScanSource {
 }
 
 /** True where ML Kit's own scanner screen is available as a fallback. */
+/** Gap between decode attempts. Twelve a second is well past what a hand can move. */
+const DECODE_INTERVAL_MS = 80;
+
 export function hasNativeScannerFallback(): boolean {
   return Capacitor.isNativePlatform();
 }
@@ -236,7 +239,14 @@ export async function scanFromVideo(
       } catch {
         // A transient decode failure is normal between frames.
       }
-      requestAnimationFrame(() => void tick());
+      // Roughly twelve reads a second rather than one per animation frame.
+      //
+      // The loop used to run at the display's refresh rate, so a 120 Hz phone
+      // was asked for 120 full-resolution barcode detections every second and
+      // the viewfinder visibly stuttered. A barcode cannot move meaningfully in
+      // eighty milliseconds, so the extra work bought nothing and cost the
+      // frame rate of the preview it was competing with.
+      setTimeout(() => requestAnimationFrame(() => void tick()), DECODE_INTERVAL_MS);
     };
     void tick();
     return { stop, setTorch, hasTorch };
@@ -338,23 +348,53 @@ async function startPlayback(video: HTMLVideoElement): Promise<void> {
   }
 }
 
+/** A region of the frame, as fractions of its width and height. */
+export interface CropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /**
  * Grabs the current video frame as a JPEG data URL.
  *
- * Downscaled to a sane width first: a full-resolution phone frame is several
- * megabytes of base64 to shuttle across the bridge, and OCR gains nothing from
- * the extra pixels — label text is large and high-contrast.
+ * `crop` is the part of the frame worth reading — for the label scanner, the
+ * rectangle drawn on screen for the user to aim with. Cropping first is what
+ * makes the text legible to OCR: nutrition panels are set in six to eight point
+ * type, and downscaling the *whole* frame to a fixed width left an x-height
+ * around ten pixels, where ML Kit wants closer to twenty. Taking only the
+ * region that matters keeps every source pixel of the panel for the same number
+ * of bytes on the wire, which is several times the resolution on the text that
+ * actually has to be read.
+ *
+ * Without a crop the old behaviour stands: whole frame, capped width. That is
+ * right for a barcode, which is large, high-contrast, and may be anywhere.
  */
-export function captureFrame(video: HTMLVideoElement, maxWidth = 1440): string | null {
+export function captureFrame(
+  video: HTMLVideoElement,
+  options: { maxWidth?: number; crop?: CropRect } = {},
+): string | null {
   const { videoWidth, videoHeight } = video;
   if (!videoWidth || !videoHeight) return null;
-  const scale = Math.min(1, maxWidth / videoWidth);
+
+  const crop = options.crop;
+  const sx = crop ? Math.max(0, Math.round(crop.x * videoWidth)) : 0;
+  const sy = crop ? Math.max(0, Math.round(crop.y * videoHeight)) : 0;
+  const sw = crop ? Math.min(videoWidth - sx, Math.round(crop.width * videoWidth)) : videoWidth;
+  const sh = crop ? Math.min(videoHeight - sy, Math.round(crop.height * videoHeight)) : videoHeight;
+  if (sw <= 0 || sh <= 0) return null;
+
+  // A cropped region is already a fraction of the frame, so it keeps its pixels.
+  const maxWidth = options.maxWidth ?? (crop ? sw : 1440);
+  const scale = Math.min(1, maxWidth / sw);
+
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(videoWidth * scale);
-  canvas.height = Math.round(videoHeight * scale);
+  canvas.width = Math.round(sw * scale);
+  canvas.height = Math.round(sh * scale);
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL('image/jpeg', 0.92);
 }
 
@@ -420,8 +460,11 @@ export async function openCameraPreview(
   const state = await cameraPermission();
   if (state === 'denied') throw new CameraDeniedError();
 
+  // Reading six-point type needs every pixel the sensor will hand over, and
+  // `ideal` is only a hint — a device that cannot manage this simply returns
+  // the best it has. The barcode scanner deliberately asks for less.
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+    video: { facingMode: 'environment', width: { ideal: 3840 }, height: { ideal: 2160 } },
     audio: false,
   });
   video.srcObject = stream;
@@ -768,7 +811,8 @@ export function parseNutritionLabel(lines: string[]): ParsedLabel {
 
   // Salt is the European convention; convert to the sodium FuelFlow stores.
   if (out.sodiumMg === undefined) {
-    const salt = /salt\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i.exec(text);
+    // European labels print salt rather than sodium, and not always in English.
+    const salt = /(?:salt|salz|sel|sale|sal|zout|αλατ)\D{0,20}?(\d+(?:[.,]\d+)?)\s*g/i.exec(text);
     if (salt?.[1]) out.sodiumMg = toNumber(salt[1]) * 400;
   }
 

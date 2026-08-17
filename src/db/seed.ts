@@ -1,6 +1,7 @@
 import { db, tokenize, type Food, type Portion } from './schema';
 import type { Nutrients } from '../core/nutrients';
 import { isImperialUnitPortion, portionStatesItsMass } from '../core/foodName';
+import { foodGrade } from '../core/grading';
 
 /**
  * First-run seeding of the bundled core food dataset.
@@ -226,28 +227,35 @@ function unpack(
   portions.push({ label: '100 g', grams: 100 });
 
   /*
-   * Which portion opens by default.
+   * Which portion opens by default: 100 g, unless 100 g makes no sense.
    *
-   * This used to be simply the first one USDA listed, and USDA lists a bare
-   * unit conversion first on 3,080 of the 7,793 bundled foods — a beer opened
-   * on "1 fl oz" with "can or bottle (12 fl oz)" sitting right behind it, and
-   * chicken tenders on "oz" ahead of "piece".
+   * Generic reference foods are weighed, not counted, and the whole dataset is
+   * expressed per 100 g — so 100 g is both the honest default and the number a
+   * metric user is already thinking in. USDA's own ordering is no help here: it
+   * lists a bare unit conversion first on 3,080 of the 7,793 bundled foods, so
+   * a beer opened on "1 fl oz" and chicken tenders on "oz".
    *
-   * A bare unit is not a serving, it is the same weight said differently, so
-   * it is the last thing that should be offered as a default. A named
-   * household measure wins; failing that, 100 g, which is what a generic food
-   * is usually weighed in anyway.
+   * The exception is a food that cannot sensibly be weighed out at 100 g,
+   * which in practice means one whose every portion is far smaller — a single
+   * egg, a slice, a teaspoon of a spice. Weighing 100 g of nutmeg is not a
+   * thing anybody does, so those open on the household measure instead.
    */
-  const household = portions.find(
-    (portion) => !isImperialUnitPortion(portion.label) && !portionStatesItsMass(portion.label),
-  );
-  // The 100 g fallback has to exclude bare units too. A handful of USDA rows
-  // carry a single portion labelled "oz" whose gram weight is 100, and matching
-  // on weight alone picked that one over the canonical entry appended above.
   const hundred = portions.find(
     (portion) => portion.grams === 100 && !isImperialUnitPortion(portion.label),
   );
-  const preferred = household ?? hundred ?? portions[0];
+  const household = portions.find(
+    (portion) => !isImperialUnitPortion(portion.label) && !portionStatesItsMass(portion.label),
+  );
+  // "Far smaller" means every real serving the source lists is under a third of
+  // 100 g. One of those and 100 g is a laboratory quantity, not a helping.
+  const servings = portions.filter((portion) => !portionStatesItsMass(portion.label));
+  const hundredIsAbsurd =
+    servings.length > 0 && servings.every((portion) => portion.grams > 0 && portion.grams < 33);
+
+  // 100 g stays in the chain after the household measure: sake lists only
+  // "fl oz", so treating it as absurd-at-100 g and finding no household measure
+  // used to fall all the way through to that bare unit.
+  const preferred = (hundredIsAbsurd ? household : hundred) ?? hundred ?? household ?? portions[0];
   if (preferred) preferred.preferred = true;
 
   const sourceId = String(fdcId);
@@ -265,6 +273,7 @@ function unpack(
     tokens: tokenize(name, category),
     quality: 0.95,
     verified: true,
+    grade: foodGrade(category || undefined),
     origin: origin === 'analysis' || origin === 'label' || origin === 'calculated' ? origin : undefined,
     createdAt: now,
     updatedAt: now,

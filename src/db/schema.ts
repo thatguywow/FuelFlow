@@ -70,6 +70,13 @@ export interface Food {
   origin?: 'analysis' | 'label' | 'calculated';
 
   /**
+   * 0–1: how close this is to a plain ingredient rather than a manufactured
+   * product, from the source's own category. Computed once when the food is
+   * stored so search never recomputes it. See `core/grading`.
+   */
+  grade?: number;
+
+  /**
    * True when this record came from a full product lookup rather than from a
    * search result page.
    *
