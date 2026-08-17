@@ -62,6 +62,7 @@ function fold(into: Map<DayKey, Delta>, entry: DiaryEntry | undefined, sign: 1 |
   delta.rows += sign;
   if (entry.deleted) return;
   delta.entries += sign;
+  if (!entry.nutrients) return;
   for (const key in entry.nutrients) {
     const value = entry.nutrients[key];
     if (value === undefined) continue;

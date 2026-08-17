@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { ErrorBoundary } from './ui/ErrorBoundary';
 import App from './App';
 import './styles/theme.css';
 
@@ -28,6 +29,10 @@ window.setTimeout(dismissBoot, 8000);
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    {/* Outermost catch. Below this the tabs and sheets have their own, so a
+        broken screen loses only itself; this one exists for the shell. */}
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

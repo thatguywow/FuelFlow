@@ -215,6 +215,7 @@ export function derivedEnergy(n: Nutrients): number {
 export function scaleNutrients(per100g: Nutrients, grams: number): Nutrients {
   const factor = grams / 100;
   const out: Nutrients = {};
+  if (!per100g) return out;
   for (const key in per100g) {
     const value = per100g[key];
     if (value !== undefined) out[key] = value * factor;
@@ -224,6 +225,12 @@ export function scaleNutrients(per100g: Nutrients, grams: number): Nutrients {
 
 /** Sum nutrient vectors in place-free fashion. */
 export function addNutrients(target: Nutrients, source: Nutrients): Nutrients {
+  // Tolerates a missing vector. A diary row restored from an older backup, or
+  // written by an interrupted migration, can carry no nutrients at all — and
+  // every total in the app is built from this function, so one such row used to
+  // throw inside the live query that computes the day's targets. That is above
+  // any screen-level boundary, so a single bad record took down the whole app.
+  if (!source) return target;
   for (const key in source) {
     const value = source[key];
     if (value === undefined) continue;

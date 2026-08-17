@@ -700,7 +700,7 @@ export async function buildObservations(days = 180, end: DayKey = toDayKey()): P
 
   const intake = new Map<DayKey, number>();
   for (const entry of entries) {
-    const kcal = entry.nutrients[N.ENERGY] ?? 0;
+    const kcal = entry.nutrients?.[N.ENERGY] ?? 0;
     intake.set(entry.day, (intake.get(entry.day) ?? 0) + kcal);
   }
 

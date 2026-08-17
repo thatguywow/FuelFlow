@@ -421,6 +421,14 @@ function remember(key: string, hits: SearchHit[]): void {
   }
 }
 
+/** Thrown when the search service is in its failure cooldown. */
+export class OffUnavailableError extends Error {
+  constructor() {
+    super('Open Food Facts search is unavailable');
+    this.name = 'OffUnavailableError';
+  }
+}
+
 /** Thrown when the rate limiter has nothing left, so the caller can say so. */
 export class OffThrottledError extends Error {
   constructor() {
@@ -559,6 +567,7 @@ function fuseRanks(candidates: Candidate[]): Candidate[] {
 export async function searchOnline(query: string, options: OffSearchOptions = {}): Promise<SearchHit[]> {
   const trimmed = query.trim();
   if (trimmed.length < 3) return [];
+  if (!canSearchOnline()) throw new OffUnavailableError();
 
   const limit = options.limit ?? 20;
   const key = `${trimmed.toLowerCase()}|${limit}|${options.country ?? ''}`;
@@ -588,9 +597,9 @@ export async function searchOnline(query: string, options: OffSearchOptions = {}
 
   // Short deadline. This tier is an extra, not the answer — nothing here is
   // worth making the user watch a spinner for.
-  const BUDGET_MS = 6_000;
+  const BUDGET_MS = 4_000;
 
-  const products = await fetchCandidates(params, trimmed, BUDGET_MS, options.signal);
+  const products = await fetchCandidates(params, BUDGET_MS, options.signal);
 
   // Converted together rather than one after another. Each conversion touches
   // IndexedDB to resolve and cache the product, and serialising them added the
@@ -633,49 +642,75 @@ export async function searchOnline(query: string, options: OffSearchOptions = {}
  *
  * It runs on separate infrastructure from the main site and its outages last
  * hours, not seconds. Trying it first on every single search during an outage
- * means paying the full timeout before falling back, every time — so once it
- * has failed, searches go straight to the classic endpoint for a while.
+ * means paying the full timeout before giving up, every time.
  */
 const SAL_COOLDOWN_MS = 5 * 60_000;
 let skipSalUntil = 0;
 
+/**
+ * Whether this platform can text-search Open Food Facts at all.
+ *
+ * `search.openfoodfacts.org` sends no CORS headers, so a browser cannot read
+ * its response however the request is framed — the fetch fails before any of
+ * our timeouts apply. Native goes through CapacitorHttp, which is a real HTTP
+ * client rather than a browser and is not subject to the same-origin policy.
+ *
+ * Barcode lookup is unaffected: the v2 product endpoint on the main host *does*
+ * send CORS headers, so scanning works everywhere. Only free-text search is
+ * native-only, and pretending otherwise cost the web build a guaranteed-failing
+ * request on every keystroke.
+ */
+export function canSearchOnline(): boolean {
+  return forcedOnlineSearch ?? Capacitor.isNativePlatform();
+}
+
+/**
+ * Override the platform gate, for tests that stub the network.
+ *
+ * The same seam as `setClockForTesting`: a browser harness can exercise the
+ * ranking and hydration paths against a canned Open Food Facts without the
+ * CORS reality of the real host getting in the way. Returns a restore function.
+ */
+let forcedOnlineSearch: boolean | null = null;
+export function setOnlineSearchForTesting(enabled: boolean): () => void {
+  forcedOnlineSearch = enabled;
+  return () => {
+    forcedOnlineSearch = null;
+  };
+}
+
 async function fetchCandidates(
   params: URLSearchParams,
-  query: string,
   budgetMs: number,
   signal?: AbortSignal,
 ): Promise<OffProduct[]> {
-  if (Date.now() >= skipSalUntil) {
-    try {
-      const data = await request<{ hits?: OffProduct[] }>(
-        `${SEARCH_BASE}/search?${params.toString()}${identity()}`,
-        budgetMs,
-        signal,
-      );
-      skipSalUntil = 0;
-      return data.hits ?? [];
-    } catch (error) {
-      // An abort is the user moving on, not the service being down.
-      if (signal?.aborted) throw error;
-      skipSalUntil = Date.now() + SAL_COOLDOWN_MS;
-    }
-  }
+  if (Date.now() < skipSalUntil) throw new OffUnavailableError();
 
-  const fallback = new URLSearchParams({
-    search_terms: query,
-    search_simple: '1',
-    action: 'process',
-    page_size: String(CANDIDATE_POOL),
-    fields: fieldsFor(SEARCH_FIELD_LIST),
-    json: '1',
-  });
-  const data = await request<{ products?: OffProduct[] }>(
-    `${BASE}/cgi/search.pl?${fallback.toString()}${identity()}`,
-    budgetMs,
-    signal,
-  );
-  return data.products ?? [];
+  try {
+    const data = await request<{ hits?: OffProduct[] }>(
+      `${SEARCH_BASE}/search?${params.toString()}${identity()}`,
+      budgetMs,
+      signal,
+    );
+    skipSalUntil = 0;
+    return data.hits ?? [];
+  } catch (error) {
+    // An abort is the user moving on, not the service being down.
+    if (signal?.aborted) throw error;
+    skipSalUntil = Date.now() + SAL_COOLDOWN_MS;
+    throw error;
+  }
 }
+
+/*
+ * There used to be a second attempt here against `/cgi/search.pl`.
+ *
+ * It has been retired upstream: it now answers with an HTML page rather than
+ * JSON, so it could never succeed. Its only effect was to convert one
+ * Search-a-licious hiccup into five minutes of a *guaranteed* failure with a
+ * full round trip attached — no results, and slower than having none. A tier
+ * that cannot work is worse than a tier that is absent.
+ */
 
 /** Whether an online lookup is worth attempting right now. */
 export function isOnline(): boolean {

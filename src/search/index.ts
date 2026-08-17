@@ -2,7 +2,7 @@ import { getFoodByBarcode } from '../db/repo';
 import type { Food, FoodSource } from '../db/schema';
 import { recentFoods, searchLocal, type SearchHit } from './local';
 import { lookupBarcode as lookupRemote, searchRemote } from './remote';
-import { fetchByBarcode, isOnline, searchOnline } from './off';
+import { canSearchOnline, fetchByBarcode, isOnline, searchOnline } from './off';
 
 export type { SearchHit } from './local';
 export { recentFoods, suggestionsForMeal } from './local';
@@ -134,7 +134,10 @@ export async function searchTiered(
       (r) => settle('remote', r),
       () => settle('remote', null),
     ),
-    (isOnline()
+    // `canSearchOnline` is false in a browser: the search host sends no CORS
+    // headers, so the request cannot succeed however it is framed. Skipping it
+    // outright saves the web build a guaranteed failure on every query.
+    (isOnline() && canSearchOnline()
       ? searchOnline(trimmed, { limit: 15, country: options.country, signal: options.signal })
       : Promise.reject(new Error('offline'))
     ).then(

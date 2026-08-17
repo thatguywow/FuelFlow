@@ -10,6 +10,7 @@ import { dismissBoot } from './main';
 import { applyNativeChrome } from './ui/systemChrome';
 import { useAndroidBackButton } from './ui/backButton';
 import { ToastHost, cx } from './ui/primitives';
+import { ErrorBoundary } from './ui/ErrorBoundary';
 import { IconBody, IconChart, IconFlame, IconMore } from './ui/icons';
 import Today from './screens/Today';
 import Trends from './screens/Trends';
@@ -64,10 +65,14 @@ export default function App() {
         container is a normal element, so hiding its bar actually works.
       */}
       <main className="no-scrollbar flex-1 overflow-y-auto overscroll-y-contain pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))]">
-        {tab === 'today' && <Today />}
-        {tab === 'trends' && <Trends />}
-        {tab === 'body' && <Body />}
-        {tab === 'more' && <More />}
+        {/* Keyed on the tab so switching away from a broken screen clears its
+            error rather than carrying it to the next one. */}
+        <ErrorBoundary key={tab} area={tab}>
+          {tab === 'today' && <Today />}
+          {tab === 'trends' && <Trends />}
+          {tab === 'body' && <Body />}
+          {tab === 'more' && <More />}
+        </ErrorBoundary>
       </main>
 
       {/* Content scrolling under a translucent bar stays legible through it and
@@ -149,7 +154,10 @@ export default function App() {
       </nav>
 
       <AddMenu />
-      <SheetHost />
+      {/* A sheet that throws must not take the diary behind it down. */}
+      <ErrorBoundary area="sheet">
+        <SheetHost />
+      </ErrorBoundary>
       <ToastHost />
     </div>
   );
