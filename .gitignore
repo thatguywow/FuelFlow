@@ -31,5 +31,9 @@ data-build/
 *.sw?
 
 # Local screenshot harness (Playwright); not part of the build
-tools/
+# Screenshots are build output; the checks that produce them are not.
 shots/
+# One-off probes live here and are not worth keeping.
+tools/probe-*.mjs
+tools/dbg*.mjs
+tools/debug-*.mjs
