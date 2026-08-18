@@ -113,9 +113,17 @@ export function singular(word: string): string {
   return word;
 }
 
-/** Words of the clause before the first comma — the food's own identity. */
+/**
+ * Words of the clause before the first comma — the food's own identity.
+ *
+ * Parentheses are stripped first. USDA appends "(Includes foods for USDA's Food
+ * Distribution Program)" to hundreds of records, and where the name has no
+ * comma that whole aside became the head clause: "Oats (Includes foods for
+ * USDA's …)" read as a nine-word name, so it scored as a poor match for "oats"
+ * and lost to oat bran. The aside is provenance, never identity.
+ */
 export function headWords(name: string): string[] {
-  return (name.split(',')[0] ?? '')
+  return (name.replace(/\s*\([^)]*\)/g, '').split(',')[0] ?? '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')

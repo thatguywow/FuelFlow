@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useUi } from '../state/ui';
 import { useTargets } from '../state/useTargets';
 import { nearestMeal } from '../core/profile';
+import { warmRemoteDb } from '../search';
 import { cx } from '../ui/primitives';
 import { tapFeedback } from '../ui/motion';
 import { IconBolt, IconCompose, IconLabel, IconPlus, IconScan, IconSearch } from '../ui/icons';
@@ -32,6 +33,24 @@ export default function AddMenu() {
   const openSheet = useUi((s) => s.openSheet);
   const day = useUi((s) => s.day);
   const derived = useTargets();
+
+  /*
+   * Start the branded database as soon as the menu opens.
+   *
+   * It was warmed when the scanner mounted, which is already too late: by then
+   * the user has tapped through and is aiming the camera, and the engine — a
+   * 1.2 MB WebAssembly runtime plus its worker and index pages — is racing the
+   * decode. Measured cold, a first scan took about six seconds; warm, seventy
+   * to a hundred and twenty milliseconds.
+   *
+   * Opening this menu is the earliest honest signal that a scan might be
+   * coming, and it buys a second or two of head start. Deliberately not done at
+   * launch: somebody who never scans should not pay for the download, and the
+   * service worker caches it after the first time either way.
+   */
+  useEffect(() => {
+    if (open) warmRemoteDb();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;

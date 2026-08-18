@@ -52,9 +52,13 @@ export default function MyFoods() {
       open
       onClose={closeSheet}
       title="Your foods"
+      // Both footers are `secondary`, like the search sheet's. `primary` is
+      // reserved for the action that commits — "Add 250 kcal", "Save changes" —
+      // and these only open another sheet. One tab of three shouting was the
+      // tell that the rule had never been written down anywhere.
       footer={
         section === 'recipes' ? (
-          <Button variant="primary" full onClick={() => openSheet({ kind: 'recipe-builder' })}>
+          <Button variant="secondary" full onClick={() => openSheet({ kind: 'recipe-builder' })}>
             <IconPlus size={17} />
             Create a recipe
           </Button>

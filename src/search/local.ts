@@ -1,7 +1,7 @@
 import { db, normalizeQuery, type Food, type FoodSource } from '../db/schema';
 import { frecencyScore } from '../db/repo';
 import { isImperialUnitPortion } from '../core/foodName';
-import { foodGrade, headMatch, isAnimalProduct } from '../core/grading';
+import { foodGrade, headMatch, isAnimalProduct, singular } from '../core/grading';
 import { expandToken } from '../core/aliases';
 import { N } from '../core/nutrients';
 
@@ -129,6 +129,13 @@ const NARROWING_TERMS = [
   'dry',
 ] as const;
 
+/** Preparation words, so a query naming one suppresses the raw-food tiebreak. */
+const PREPARATIONS = new Set([
+  'raw', 'cooked', 'roasted', 'baked', 'boiled', 'braised', 'fried', 'grilled',
+  'broiled', 'stewed', 'steamed', 'poached', 'scrambled', 'omelet', 'dried',
+  'frozen', 'canned', 'smoked', 'toasted', 'hard', 'soft',
+]);
+
 /** Source trust ordering: your own data first, then curated, then crowd-sourced. */
 const SOURCE_WEIGHT: Record<FoodSource, number> = {
   user: 1.35,
@@ -138,6 +145,28 @@ const SOURCE_WEIGHT: Record<FoodSource, number> = {
   branded: 1.0,
   off: 0.95,
 };
+
+/**
+ * Every form of a query word worth looking up: synonyms, plus the singular.
+ *
+ * The token index is prefix-only, so a query word has to be a *prefix* of the
+ * stored token to retrieve anything. That works in one direction — "apple"
+ * finds "Apples" — and fails completely in the other, because "white" does not
+ * start with "whites". Searching "eggs" therefore returned fish roe and a
+ * frozen scrambled mixture: the only foods USDA literally names "Eggs, …",
+ * while all ninety-nine filed under "Egg, …" were never even candidates.
+ *
+ * `singular` already existed for scoring. It was simply never applied to
+ * retrieval, so the ranking could only ever order what the index had already
+ * thrown away.
+ */
+function queryGroup(token: string): string[] {
+  const stem = singular(token);
+  const words = expandToken(token);
+  // Stems of the synonyms too, so "courgettes" reaches "zucchini".
+  const all = [...words, stem, ...words.map(singular)];
+  return [...new Set(all)];
+}
 
 export async function searchLocal(query: string, options: LocalSearchOptions = {}): Promise<SearchHit[]> {
   const limit = options.limit ?? 40;
@@ -172,7 +201,7 @@ export async function searchLocal(query: string, options: LocalSearchOptions = {
    * Almost every word expands to just itself, so the common case costs one
    * extra array of length one.
    */
-  const groups = tokens.map(expandToken);
+  const groups = tokens.map(queryGroup);
 
   const cap = options.candidateCap ?? 4000;
   const keySets = await Promise.all(
@@ -270,9 +299,12 @@ function scoreFood(
   let score = 0;
 
   for (const token of tokens) {
-    const exact = food.tokens.includes(token);
+    // Matched against the stem as well: with a plural query every food would
+    // otherwise miss the exact-token bonus and score as a weak partial match.
+    const stem = singular(token);
+    const exact = food.tokens.includes(token) || food.tokens.includes(stem);
     score += exact ? 10 : 5;
-    if (name.includes(token)) score += 3;
+    if (name.includes(token) || name.includes(stem)) score += 3;
   }
 
   /*
@@ -322,6 +354,18 @@ function scoreFood(
   }
 
   if (namesAPart(food, tokens)) score -= 12;
+
+  /*
+   * A tiebreak, so the order among equivalent variants is chosen rather than
+   * accidental.
+   *
+   * Every "Egg, whole, …" entry scored exactly 53.7 — raw, poached, scrambled
+   * and fried were indistinguishable, and the raw one leading was luck. When
+   * the query names no preparation, the unprepared form is the one it means:
+   * it is the base the others are derived from, and the one people weigh.
+   * Deliberately small — it separates equals and cannot outrank a better match.
+   */
+  if (!tokens.some((token) => PREPARATIONS.has(token)) && containsWord(name, 'raw')) score += 1.5;
 
   // Records without usable energy data are noise.
   const energy = food.per100g[N.ENERGY];
